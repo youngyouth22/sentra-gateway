@@ -1,0 +1,22 @@
+services:
+  api:
+    build:
+      context: .
+      target: runner
+    container_name: sentra-gateway
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - API_KEY=${API_KEY}
+      - NOKIA_API_KEY=${NOKIA_API_KEY}
+      - NOKIA_ENV=${NOKIA_ENV:-dev}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
