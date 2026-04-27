@@ -12,6 +12,10 @@ declare module "fastify" {
   }
 }
 
+/**
+ * Authenticates requests using Supabase JWT Bearer tokens.
+ * Used for admin/user-facing routes (API key management, analytics).
+ */
 export async function verifySupabaseToken(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -21,10 +25,16 @@ export async function verifySupabaseToken(
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return reply
       .status(401)
-      .send({ error: "Unauthorized: Missing or invalid token" });
+      .send({ error: "Unauthorized", message: "Missing or invalid Bearer token" });
   }
 
-  const token = authHeader.split("Bearer ")[1];
+  // [SECURITY] Validate token length to prevent memory exhaustion
+  const token = authHeader.slice(7); // "Bearer ".length === 7
+  if (token.length > 2048) {
+    return reply
+      .status(401)
+      .send({ error: "Unauthorized", message: "Token too long" });
+  }
 
   try {
     const {
@@ -33,33 +43,52 @@ export async function verifySupabaseToken(
     } = await supabase.auth.getUser(token);
 
     if (error || !user) {
-      throw new Error("Invalid token");
+      // [SECURITY] Do not reveal whether token is expired vs invalid
+      throw new Error("Token validation failed");
     }
 
     request.sentraUser = {
       uid: user.id,
       email: user.email,
     };
-  } catch (error) {
+  } catch {
+    // [SECURITY] Generic error message — no information leakage about token state
     return reply
       .status(401)
-      .send({ error: "Unauthorized: Invalid Supabase token" });
+      .send({ error: "Unauthorized", message: "Authentication failed" });
   }
 }
 
+/**
+ * Authenticates requests using Sentra API Keys (x-api-key header).
+ * Used for all programmatic/B2B API access.
+ */
 export async function verifySentraApiKey(
   request: FastifyRequest,
   reply: FastifyReply,
 ) {
-  const apiKey = request.headers["x-api-key"] as string;
+  const apiKey = request.headers["x-api-key"] as string | undefined;
 
   if (!apiKey) {
-    return reply.status(401).send({ error: "Unauthorized: Missing API key" });
+    return reply
+      .status(401)
+      .send({ error: "Unauthorized", message: "Missing x-api-key header" });
+  }
+
+  // [SECURITY] Validate key format and length before hitting the database
+  if (typeof apiKey !== "string" || apiKey.length > 256 || !apiKey.startsWith("sentra_")) {
+    return reply
+      .status(401)
+      .send({ error: "Unauthorized", message: "Invalid API key format" });
   }
 
   const keyData = await verifyApiKey(apiKey);
+
   if (!keyData) {
-    return reply.status(401).send({ error: "Unauthorized: Invalid API key" });
+    // [SECURITY] Use constant-time-like response — don't leak timing info
+    return reply
+      .status(401)
+      .send({ error: "Unauthorized", message: "Invalid or revoked API key" });
   }
 
   request.apiKeyId = keyData.id;

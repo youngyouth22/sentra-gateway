@@ -4,24 +4,26 @@ import { db } from "../modules/db/index.js";
 
 export function usageTracker(fastify: FastifyInstance) {
   fastify.addHook("onResponse", async (request: FastifyRequest, reply: FastifyReply) => {
-    // Only log if we have a user/apiKey context (i.e., it's a protected endpoint)
-    if (!request.user || !request.apiKeyId) {
+    // [CVE-6 FIX] Was checking `request.user` which doesn't exist — corrected to `request.sentraUser`
+    if (!request.sentraUser || !request.apiKeyId) {
       return;
     }
 
     const log = {
       apiKeyId: request.apiKeyId,
-      userId: request.user.uid,
-      endpoint: request.url.split('?')[0],
+      // [CVE-6 FIX] Correct property reference
+      userId: request.sentraUser.uid,
+      // [VH-7] Strip query params from URL to avoid logging sensitive query parameters
+      endpoint: request.url.split("?")[0],
       method: request.method,
       statusCode: reply.statusCode,
-      responseTime: reply.elapsedTime, // Requires 'reply.elapsedTime' which is available if 'fastify.addHook("onResponse")' is used with performance tracking
+      responseTime: reply.elapsedTime,
       timestamp: new Date(),
     };
 
-    // Non-blocking save
-    db.logUsage(log).catch(err => {
-      fastify.log.error("Failed to log API usage:", err);
+    // Non-blocking save — failure to log must never impact the response
+    db.logUsage(log).catch((err) => {
+      fastify.log.error({ err }, "Failed to log API usage");
     });
   });
 }

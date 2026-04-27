@@ -5,18 +5,47 @@ services:
       target: runner
     container_name: sentra-gateway
     ports:
-      - "${PORT:-3000}:3000"
+      - "127.0.0.1:${PORT:-3000}:3000"  # [VF-3] Bind to loopback only — let reverse proxy handle external traffic
     environment:
       - NODE_ENV=production
       - PORT=3000
       - LOG_LEVEL=${LOG_LEVEL:-info}
+      # Security — all required in production
       - API_KEY=${API_KEY}
+      - JWT_SECRET=${JWT_SECRET}         # [CVE-2 FIX] Added — was missing
       - NOKIA_API_KEY=${NOKIA_API_KEY}
-      - NOKIA_ENV=${NOKIA_ENV:-dev}
+      - NOKIA_ENV=${NOKIA_ENV:-sandbox}
+      # [VM-3 FIX] Supabase vars were missing from docker-compose — container crashed at boot
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      # CORS — restrict to your production domain
+      - CORS_ORIGIN=${CORS_ORIGIN:-https://app.sentra.io}
+      # Webhooks — optional, only set in production
+      - WEBHOOK_TRUST_ALERT_URL=${WEBHOOK_TRUST_ALERT_URL:-}
+      - WEBHOOK_TRANSACTION_BLOCKED_URL=${WEBHOOK_TRANSACTION_BLOCKED_URL:-}
+      - WEBHOOK_TRANSACTION_STEP_UP_URL=${WEBHOOK_TRANSACTION_STEP_UP_URL:-}
+      - WEBHOOK_ESCROW_CREATED_URL=${WEBHOOK_ESCROW_CREATED_URL:-}
+      - WEBHOOK_ESCROW_RELEASED_URL=${WEBHOOK_ESCROW_RELEASED_URL:-}
     restart: unless-stopped
+    # [SECURITY] Drop all Linux capabilities — principle of least privilege
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
+    # [SECURITY] Resource limits — prevent container from consuming all host memory/CPU
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          memory: 128M

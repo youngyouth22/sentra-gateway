@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { evaluateTrust, TrustResult } from "../trust/index.js";
 import {
   triggerTransactionBlocked,
@@ -7,7 +8,6 @@ import {
 export interface TransactionRequest {
   phoneNumber: string;
   amount: number;
-  // Add other fields as needed
 }
 
 export interface TransactionResponse extends TrustResult {
@@ -20,20 +20,24 @@ export async function initiateTransaction(
 ): Promise<TransactionResponse> {
   const trustResult = await evaluateTrust(request.phoneNumber);
 
-  const transactionId = generateTransactionId();
+  // [VH-3 FIX] Use cryptographically secure UUID instead of Math.random()
+  // Math.random() is NOT cryptographically secure and produces predictable IDs
+  const transactionId = `txn_${randomUUID()}`;
   const approved = trustResult.decision === "ALLOW";
 
-  // Trigger webhooks based on decision
+  // Trigger webhooks based on decision — non-blocking (fire & forget)
   if (trustResult.decision === "BLOCK") {
     triggerTransactionBlocked({
       transactionId,
-      ...trustResult,
+      riskLevel: trustResult.riskLevel,
+      decision: trustResult.decision,
       amount: request.amount,
     });
   } else if (trustResult.decision === "STEP_UP_AUTH") {
     triggerTransactionStepUp({
       transactionId,
-      ...trustResult,
+      riskLevel: trustResult.riskLevel,
+      decision: trustResult.decision,
       amount: request.amount,
     });
   }
@@ -43,8 +47,4 @@ export async function initiateTransaction(
     transactionId,
     approved,
   };
-}
-
-function generateTransactionId(): string {
-  return `txn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 }
