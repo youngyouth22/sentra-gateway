@@ -17,10 +17,10 @@ export interface EscrowResult {
 }
 
 export async function createEscrow(request: EscrowCreateRequest): Promise<EscrowResult> {
-  // [VH-4 FIX] Use cryptographically secure UUID — Date.now() was predictable
+  // [VH-4 FIX] Use cryptographically secure UUID
   const escrowId = randomUUID();
 
-  // Persist to database (instead of in-memory)
+  // Persist to database
   const { error } = await supabase.from("escrows").insert({
     id: escrowId,
     sender_phone: request.senderPhone,
@@ -41,27 +41,27 @@ export async function createEscrow(request: EscrowCreateRequest): Promise<Escrow
     ownerId: request.ownerId,
   };
 
-  // Non-blocking webhook
-  triggerEscrowCreated({ escrowId, amount: request.amount, status: "PENDING" });
+  // Non-blocking webhook — passed to specific tenant's endpoints
+  triggerEscrowCreated(request.ownerId, { escrowId, amount: request.amount, status: "PENDING" });
 
   return result;
 }
 
 export async function releaseEscrow(
   escrowId: string,
-  requesterId: string, // [CVE-7 FIX] Caller identity required
+  requesterId: string,
 ): Promise<EscrowResult | null> {
-  // [CVE-7 FIX] Verify ownership before releasing — prevents unauthorized fund release
+  // Verify ownership before releasing
   const { data: escrow, error: fetchError } = await supabase
     .from("escrows")
     .select("*")
     .eq("id", escrowId)
-    .eq("owner_id", requesterId) // Ownership check at DB level
-    .eq("status", "PENDING")    // Cannot release an already-released escrow
+    .eq("owner_id", requesterId)
+    .eq("status", "PENDING")
     .single();
 
   if (fetchError || !escrow) {
-    return null; // Caller gets 404 — no information leakage
+    return null;
   }
 
   const { error: updateError } = await supabase
@@ -80,7 +80,8 @@ export async function releaseEscrow(
     ownerId: escrow.owner_id,
   };
 
-  triggerEscrowReleased({ escrowId, amount: escrow.amount, status: "RELEASED" });
+  // Trigger webhook for specific tenant
+  triggerEscrowReleased(requesterId, { escrowId, amount: escrow.amount, status: "RELEASED" });
 
   return result;
 }

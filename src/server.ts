@@ -6,11 +6,10 @@ import { randomUUID } from "node:crypto";
 const server = Fastify({
   logger: {
     level: config.logLevel,
-    // [VF-1 FIX] Redact sensitive fields from logs globally
     redact: {
       paths: [
         "req.headers.authorization",
-        "req.headers[\"x-api-key\"]",
+        "req.headers['x-api-key']",
         "*.phoneNumber",
         "*.phone_number",
         "*.password",
@@ -20,21 +19,33 @@ const server = Fastify({
       censor: "[REDACTED]",
     },
   },
-  // [VF-2 FIX] Unique request ID for distributed tracing
   genReqId: () => randomUUID(),
-  // [VH-5 FIX] Limit request body to 1MB to prevent DoS via large payloads
   bodyLimit: config.bodyLimit,
-  // Trust the first proxy hop (important for real IP behind reverse proxy)
   trustProxy: config.isProduction ? 1 : false,
-  // Disable X-Powered-By header (Fastify doesn't set it, but being explicit)
-  disableRequestLogging: false,
 });
 
 server.register(app);
 
+// ── Graceful Shutdown ──────────────────────────────────────────────────────
+// [B2B STABILITY] Ensure the server finishes processing requests before stopping.
+const signals: NodeJS.Signals[] = ["SIGINT", "SIGTERM"];
+for (const signal of signals) {
+  process.on(signal, async () => {
+    server.log.info(`Received ${signal}, shutting down gracefully...`);
+    try {
+      // Close the server (stops accepting new connections)
+      await server.close();
+      server.log.info("Graceful shutdown complete.");
+      process.exit(0);
+    } catch (err) {
+      server.log.error(err, "Error during graceful shutdown");
+      process.exit(1);
+    }
+  });
+}
+
 const start = async () => {
   try {
-    // [VF-3] In production, bind to 0.0.0.0 but ensure TLS is terminated upstream
     await server.listen({ port: config.port, host: "0.0.0.0" });
     if (!config.isProduction) {
       console.log(`Server listening on http://localhost:${config.port}`);

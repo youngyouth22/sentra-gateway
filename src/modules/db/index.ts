@@ -1,5 +1,4 @@
-
-import { v4 as uuidv4 } from "uuid";
+import { supabase } from "../../plugins/supabase.js";
 
 // Interfaces for our collections
 export interface User {
@@ -15,6 +14,7 @@ export interface ApiKey {
   keyHash: string;
   createdAt: Date;
   lastUsedAt: Date | null;
+  isRevoked?: boolean;
 }
 
 export interface ApiUsageLog {
@@ -28,55 +28,117 @@ export interface ApiUsageLog {
   timestamp: Date;
 }
 
-// In-memory storage fallback
-class InMemoryDB {
-  users: Map<string, User> = new Map();
-  apiKeys: Map<string, ApiKey> = new Map();
-  usageLogs: ApiUsageLog[] = [];
-
-  async saveUser(user: User): Promise<void> {
-    this.users.set(user.id, user);
-  }
-
-  async getUser(id: string): Promise<User | undefined> {
-    return this.users.get(id);
-  }
-
+/**
+ * [B2B PERSISTENCE FIX]
+ * Migrated from InMemoryDB to Supabase/Postgres.
+ * This ensures API keys and usage logs survive server restarts.
+ */
+class PersistentDB {
   async saveApiKey(key: ApiKey): Promise<void> {
-    this.apiKeys.set(key.id, key);
+    const { error } = await supabase.from("api_keys").insert({
+      id: key.id,
+      user_id: key.userId,
+      name: key.name,
+      key_hash: key.keyHash,
+      created_at: key.createdAt,
+    });
+    if (error) throw error;
   }
 
   async getApiKeyByHash(hash: string): Promise<ApiKey | undefined> {
-    return Array.from(this.apiKeys.values()).find(k => k.keyHash === hash);
+    const { data, error } = await supabase
+      .from("api_keys")
+      .select("*")
+      .eq("key_hash", hash)
+      .eq("is_revoked", false)
+      .single();
+
+    if (error || !data) return undefined;
+
+    return {
+      id: data.id,
+      userId: data.user_id,
+      name: data.name,
+      keyHash: data.key_hash,
+      createdAt: new Date(data.created_at),
+      lastUsedAt: data.last_used_at ? new Date(data.last_used_at) : null,
+      isRevoked: data.is_revoked,
+    };
   }
 
   async getApiKeysByUser(userId: string): Promise<ApiKey[]> {
-    return Array.from(this.apiKeys.values()).filter(k => k.userId === userId);
+    const { data, error } = await supabase
+      .from("api_keys")
+      .select("*")
+      .eq("user_id", userId);
+
+    if (error || !data) return [];
+
+    return data.map((d) => ({
+      id: d.id,
+      userId: d.user_id,
+      name: d.name,
+      keyHash: d.key_hash,
+      createdAt: new Date(d.created_at),
+      lastUsedAt: d.last_used_at ? new Date(d.last_used_at) : null,
+      isRevoked: d.is_revoked,
+    }));
   }
 
   async deleteApiKey(id: string, userId: string): Promise<boolean> {
-    const key = this.apiKeys.get(id);
-    if (key && key.userId === userId) {
-      return this.apiKeys.delete(id);
-    }
-    return false;
+    const { error } = await supabase
+      .from("api_keys")
+      .update({ is_revoked: true }) // Soft delete for audit trail
+      .eq("id", id)
+      .eq("user_id", userId);
+
+    return !error;
   }
 
   async updateApiKeyLastUsed(id: string): Promise<void> {
-    const key = this.apiKeys.get(id);
-    if (key) {
-      key.lastUsedAt = new Date();
-    }
+    await supabase
+      .from("api_keys")
+      .update({ last_used_at: new Date() })
+      .eq("id", id);
   }
 
   async logUsage(log: Omit<ApiUsageLog, "id">): Promise<void> {
-    const id = uuidv4();
-    this.usageLogs.push({ ...log, id });
+    // Non-blocking fire and forget
+    supabase
+      .from("api_usage_logs")
+      .insert({
+        api_key_id: log.apiKeyId,
+        user_id: log.userId,
+        endpoint: log.endpoint,
+        method: log.method,
+        status_code: log.statusCode,
+        response_time: log.responseTime,
+      })
+      .then(({ error }) => {
+        if (error) console.error("[DB] Error logging usage:", error.message);
+      });
   }
 
   async getUsageByUser(userId: string): Promise<ApiUsageLog[]> {
-    return this.usageLogs.filter(log => log.userId === userId);
+    const { data, error } = await supabase
+      .from("api_usage_logs")
+      .select("*")
+      .eq("user_id", userId)
+      .order("timestamp", { ascending: false });
+
+    if (error || !data) return [];
+
+    return data.map((d) => ({
+      id: d.id,
+      apiKeyId: d.api_key_id,
+      userId: d.user_id,
+      endpoint: d.endpoint,
+      method: d.method,
+      statusCode: d.status_code,
+      responseTime: d.response_time,
+      timestamp: new Date(d.timestamp),
+    }));
   }
 }
 
-export const db = new InMemoryDB();
+export const db = new PersistentDB();

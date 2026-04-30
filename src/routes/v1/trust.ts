@@ -63,7 +63,7 @@ export default async function (fastify: FastifyInstance) {
       // [VH-7 FIX] Do NOT log the raw phone number — log a masked version
       const maskedPhone = phoneNumber.slice(0, 4) + "****" + phoneNumber.slice(-2);
       request.log.info({ phoneNumber: maskedPhone }, "Evaluating trust score");
-      const result = await evaluateTrust(phoneNumber);
+      const result = await evaluateTrust(phoneNumber, request.sentraUser.uid);
       return result;
     },
   );

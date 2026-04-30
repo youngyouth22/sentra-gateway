@@ -30,7 +30,7 @@ export function hashPhone(phoneNumber: string): string {
   return crypto.createHash("sha256").update(phoneNumber).digest("hex");
 }
 
-export async function evaluateTrust(phoneNumber: string): Promise<TrustResult> {
+export async function evaluateTrust(phoneNumber: string, userId: string): Promise<TrustResult> {
   const phoneHash = hashPhone(phoneNumber);
 
   // 1. Fetch or create identity in Collective Intelligence Nexus
@@ -122,7 +122,7 @@ export async function evaluateTrust(phoneNumber: string): Promise<TrustResult> {
 
   // [VH-7 FIX] Webhook payload does NOT include raw phone number
   if (finalScore < 40) {
-    triggerTrustAlert({
+    triggerTrustAlert(userId, {
       phoneHash, // Use hash, not raw phone number
       trustScore: finalScore,
       signals,

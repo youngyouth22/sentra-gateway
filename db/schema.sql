@@ -122,3 +122,109 @@ CREATE POLICY device_binding_owner_policy ON device_bindings
 
 -- Identities and signals use service role only (no user-level RLS)
 -- These are accessed only via the server with the service_role key
+
+-- ── Per-Tenant Webhook Endpoints ─────────────────────────────────────
+-- Each API customer configures their own webhook URL in the Sentra dashboard.
+-- SENTRA dispatches events to each customer's backend — they receive the data
+-- and do whatever they want with it (update their DB, send alerts, etc.)
+-- This is the standard B2B model used by Stripe, Twilio, GitHub, etc.
+CREATE TABLE IF NOT EXISTS webhook_endpoints (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id TEXT NOT NULL,             -- Supabase user UID (the API key owner)
+    url TEXT NOT NULL                  -- Customer's HTTPS endpoint
+        CHECK (url LIKE 'https://%'),
+    -- HMAC-SHA256 signing secret: Sentra signs every payload with this secret.
+    -- The customer verifies the X-Sentra-Signature header on their side.
+    -- This prevents a 3rd party from spoofing webhook events to the customer.
+    signing_secret TEXT NOT NULL,
+    -- Which events this endpoint subscribes to
+    events TEXT[] NOT NULL DEFAULT ARRAY[
+        'trust.alert',
+        'transaction.blocked',
+        'transaction.step_up',
+        'escrow.created',
+        'escrow.released'
+    ],
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    last_triggered_at TIMESTAMP WITH TIME ZONE,
+    UNIQUE(user_id, url)
+);
+
+CREATE INDEX IF NOT EXISTS idx_webhook_endpoints_user ON webhook_endpoints(user_id);
+CREATE INDEX IF NOT EXISTS idx_webhook_endpoints_active ON webhook_endpoints(is_active)
+    WHERE is_active = TRUE;
+
+ALTER TABLE webhook_endpoints ENABLE ROW LEVEL SECURITY;
+CREATE POLICY webhook_endpoints_owner_policy ON webhook_endpoints
+    USING (user_id = auth.uid()::text);
+
+-- ── Webhook Delivery Logs ───────────────────────────────────────────
+-- Tracks every attempt to deliver a webhook.
+CREATE TABLE IF NOT EXISTS webhook_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    url TEXT NOT NULL,
+    event TEXT NOT NULL,
+    status INT,                        -- HTTP response status (200, 404, etc.)
+    error TEXT,                        -- Exception message if any
+    payload JSONB,                     -- The actual data sent
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_webhook_logs_created ON webhook_logs(created_at DESC);
+
+-- ── Persistent API Keys ─────────────────────────────────────────────
+-- Replaces InMemoryDB to ensure client access is durable.
+CREATE TABLE IF NOT EXISTS api_keys (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id TEXT NOT NULL,             -- Owner (Supabase UID)
+    name TEXT NOT NULL,                -- Descriptive name (e.g., "Prod Key")
+    key_hash TEXT UNIQUE NOT NULL,     -- SHA-256 of the key
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    last_used_at TIMESTAMP WITH TIME ZONE,
+    is_revoked BOOLEAN DEFAULT FALSE
+);
+
+CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash);
+CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_id);
+
+ALTER TABLE api_keys ENABLE ROW LEVEL SECURITY;
+CREATE POLICY api_keys_owner_policy ON api_keys
+    USING (user_id = auth.uid()::text);
+
+-- ── API Usage & Billing Logs ────────────────────────────────────────
+-- Tracks every B2B request for usage-based billing and analytics.
+CREATE TABLE IF NOT EXISTS api_usage_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    api_key_id UUID REFERENCES api_keys(id),
+    user_id TEXT NOT NULL,
+    endpoint TEXT NOT NULL,
+    method TEXT NOT NULL,
+    status_code INT NOT NULL,
+    response_time INT NOT NULL,        -- in milliseconds
+    timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_api_usage_logs_user ON api_usage_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_api_usage_logs_time ON api_usage_logs(timestamp DESC);
+
+ALTER TABLE api_usage_logs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY api_usage_logs_owner_policy ON api_usage_logs
+    USING (user_id = auth.uid()::text);
+
+-- ── Idempotency Keys ────────────────────────────────────────────────
+-- Prevents duplicate execution of sensitive operations (Escrow, Transactions).
+-- Standard B2B practice (Stripe-style idempotence).
+CREATE TABLE IF NOT EXISTS idempotency_keys (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL,
+    request_path TEXT NOT NULL,
+    response_code INT NOT NULL,
+    response_body JSONB NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP WITH TIME ZONE DEFAULT (CURRENT_TIMESTAMP + INTERVAL '24 hours'),
+    UNIQUE(user_id, idempotency_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_idempotency_lookup ON idempotency_keys(user_id, idempotency_key);

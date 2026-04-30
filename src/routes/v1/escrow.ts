@@ -2,6 +2,7 @@ import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { createEscrow, releaseEscrow } from "../../modules/escrow/index.js";
 import { verifySentraApiKey } from "../../middleware/auth.js";
+import { handleIdempotency, saveIdempotency } from "../../middleware/idempotency.js";
 
 const createSchema = z.object({
   senderPhone: z.string().regex(/^\+[1-9]\d{1,14}$/),
@@ -12,7 +13,6 @@ const createSchema = z.object({
     .max(1_000_000, "Amount exceeds maximum transaction limit"),
 });
 
-// [CVE-7 FIX] escrowId must be a valid UUID — no free-form string
 const releaseSchema = z.object({
   escrowId: z
     .string()
@@ -25,10 +25,18 @@ export default async function (fastify: FastifyInstance) {
   fastify.post(
     "/escrow/create",
     {
+      // [B2B IDEMPOTENCY] Check for duplicate requests before processing
+      preHandler: [handleIdempotency],
       schema: {
-        description: "Create a new escrow transaction",
+        description: "Create a new escrow transaction with idempotency support",
         tags: ["Escrow"],
         security: [{ apiKey: [] }],
+        headers: {
+          type: "object",
+          properties: {
+            "x-idempotency-key": { type: "string" },
+          },
+        },
         body: {
           type: "object",
           properties: {
@@ -43,7 +51,6 @@ export default async function (fastify: FastifyInstance) {
     async function (request: FastifyRequest, reply: FastifyReply) {
       const body = createSchema.parse(request.body);
 
-      // [SECURITY] senderPhone cannot equal receiverPhone
       if (body.senderPhone === body.receiverPhone) {
         return reply.status(400).send({
           error: "Bad Request",
@@ -51,11 +58,14 @@ export default async function (fastify: FastifyInstance) {
         });
       }
 
-      // [CVE-7 FIX] Pass the authenticated user as the escrow owner
       const result = await createEscrow({
         ...body,
         ownerId: request.sentraUser.uid,
       });
+
+      // [B2B IDEMPOTENCY] Save the response for potential future retries
+      await saveIdempotency(request, 201, result);
+
       return reply.status(201).send(result);
     },
   );
@@ -78,11 +88,9 @@ export default async function (fastify: FastifyInstance) {
     },
     async function (request: FastifyRequest, reply: FastifyReply) {
       const { escrowId } = releaseSchema.parse(request.body);
-      // [CVE-7 FIX] Pass ownerId to ensure only the escrow owner can release it
       const result = await releaseEscrow(escrowId, request.sentraUser.uid);
 
       if (!result) {
-        // [SECURITY] Return 404 not 403 — don't confirm the escrow exists
         return reply.status(404).send({
           error: "Not Found",
           message: "Escrow not found or you do not have permission to release it",

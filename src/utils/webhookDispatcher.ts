@@ -1,9 +1,11 @@
 import axios from "axios";
+import crypto from "node:crypto";
 import { config } from "../config/index.js";
+import { supabase } from "../plugins/supabase.js";
 
 export interface WebhookPayload {
   event: string;
-  data: Record<string, unknown>; // [SECURITY] Typed — no more `any`
+  data: Record<string, unknown>;
   timestamp: string;
 }
 
@@ -15,13 +17,13 @@ export interface WebhookPayload {
 export async function dispatchWebhook(
   url: string,
   payload: WebhookPayload,
+  signingSecret?: string
 ): Promise<void> {
-  // [CVE-4 FIX] Runtime SSRF guard — second line of defense after config validation
+  // [CVE-4 FIX] Runtime SSRF guard
   let parsedUrl: URL;
   try {
     parsedUrl = new URL(url);
   } catch {
-    // [VF-1 FIX] Use structured logging via config, not console.error
     console.error(`[webhook] Invalid URL format: ${url}`);
     return;
   }
@@ -33,7 +35,7 @@ export async function dispatchWebhook(
     return;
   }
 
-  // [CVE-4 FIX] Block known private/internal IP ranges at dispatch time
+  // [CVE-4 FIX] Block known private/internal IP ranges
   const blockedPatterns = [
     /^localhost$/i,
     /^127\./,
@@ -49,64 +51,98 @@ export async function dispatchWebhook(
     return;
   }
 
+  const payloadString = JSON.stringify(payload);
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "User-Agent": "SENTRA-Gateway/1.0",
+  };
+
+  // ── HMAC Signing (B2B Security) ──────────────────────────────────────────
+  // We sign the payload with the tenant's secret.
+  // The tenant verifies this on their side to ensure the request came from SENTRA.
+  if (signingSecret) {
+    const signature = crypto
+      .createHmac("sha256", signingSecret)
+      .update(payloadString)
+      .digest("hex");
+    headers["X-Sentra-Signature"] = `sha256=${signature}`;
+  }
+
   try {
-    await axios.post(url, payload, {
-      headers: {
-        "Content-Type": "application/json",
-        // [SECURITY] Identify ourselves so receivers can validate the source
-        "User-Agent": "SENTRA-Gateway/1.0",
-      },
+    await axios.post(url, payloadString, {
+      headers,
       timeout: 5000,
-      // [SECURITY] Disable redirect following to prevent redirect-based SSRF
       maxRedirects: 0,
     });
-  } catch (error) {
-    // Log failure but never throw — webhook failures must not affect API responses
-    console.error(`[webhook] Failed to dispatch ${payload.event}:`, (error as Error).message);
+    // Log success (non-blocking)
+    supabase.from("webhook_logs").insert({
+        url,
+        event: payload.event,
+        status: 200,
+        payload: payload.data
+    }).then(({ error }) => {
+        if (error) console.error("[webhook-log] Error saving success log:", error.message);
+    });
+  } catch (error: any) {
+    console.error(`[webhook] Failed to dispatch ${payload.event} to ${url}:`, error.message);
+    // Log failure (non-blocking)
+    supabase.from("webhook_logs").insert({
+        url,
+        event: payload.event,
+        status: error.response?.status || 500,
+        error: error.message,
+        payload: payload.data
+    }).then(({ error: logError }) => {
+        if (logError) console.error("[webhook-log] Error saving failure log:", logError.message);
+    });
   }
 }
 
-export async function triggerTrustAlert(data: Record<string, unknown>): Promise<void> {
-  if (!config.webhooks.trustAlert) return;
-  await dispatchWebhook(config.webhooks.trustAlert, {
-    event: "trust.alert",
-    data,
-    timestamp: new Date().toISOString(),
-  });
+/**
+ * Dispatch a webhook to all active endpoints configured for a specific user/tenant.
+ */
+async function dispatchToUser(userId: string, event: string, data: any) {
+    const { data: endpoints, error } = await supabase
+        .from("webhook_endpoints")
+        .select("*")
+        .eq("user_id", userId)
+        .eq("is_active", true)
+        .contains("events", [event]);
+
+    if (error || !endpoints || endpoints.length === 0) {
+        return;
+    }
+
+    const payload: WebhookPayload = {
+        event,
+        data,
+        timestamp: new Date().toISOString(),
+    };
+
+    // Parallel dispatch to all endpoints
+    await Promise.all(
+        endpoints.map(ep => dispatchWebhook(ep.url, payload, ep.signing_secret))
+    );
 }
 
-export async function triggerTransactionBlocked(data: Record<string, unknown>): Promise<void> {
-  if (!config.webhooks.transactionBlocked) return;
-  await dispatchWebhook(config.webhooks.transactionBlocked, {
-    event: "transaction.blocked",
-    data,
-    timestamp: new Date().toISOString(),
-  });
+// ── Per-Tenant Webhook Triggers ─────────────────────────────────────────────
+
+export async function triggerTrustAlert(userId: string, data: Record<string, unknown>): Promise<void> {
+  await dispatchToUser(userId, "trust.alert", data);
 }
 
-export async function triggerTransactionStepUp(data: Record<string, unknown>): Promise<void> {
-  if (!config.webhooks.transactionStepUp) return;
-  await dispatchWebhook(config.webhooks.transactionStepUp, {
-    event: "transaction.step_up",
-    data,
-    timestamp: new Date().toISOString(),
-  });
+export async function triggerTransactionBlocked(userId: string, data: Record<string, unknown>): Promise<void> {
+  await dispatchToUser(userId, "transaction.blocked", data);
 }
 
-export async function triggerEscrowCreated(data: Record<string, unknown>): Promise<void> {
-  if (!config.webhooks.escrowCreated) return;
-  await dispatchWebhook(config.webhooks.escrowCreated, {
-    event: "escrow.created",
-    data,
-    timestamp: new Date().toISOString(),
-  });
+export async function triggerTransactionStepUp(userId: string, data: Record<string, unknown>): Promise<void> {
+  await dispatchToUser(userId, "transaction.step_up", data);
 }
 
-export async function triggerEscrowReleased(data: Record<string, unknown>): Promise<void> {
-  if (!config.webhooks.escrowReleased) return;
-  await dispatchWebhook(config.webhooks.escrowReleased, {
-    event: "escrow.released",
-    data,
-    timestamp: new Date().toISOString(),
-  });
+export async function triggerEscrowCreated(userId: string, data: Record<string, unknown>): Promise<void> {
+  await dispatchToUser(userId, "escrow.created", data);
+}
+
+export async function triggerEscrowReleased(userId: string, data: Record<string, unknown>): Promise<void> {
+  await dispatchToUser(userId, "escrow.released", data);
 }

@@ -1,23 +1,32 @@
+import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { initiateTransaction } from "../../modules/transaction/index.js";
 import { verifySentraApiKey } from "../../middleware/auth.js";
+import { handleIdempotency, saveIdempotency } from "../../middleware/idempotency.js";
 
 const initiateSchema = z.object({
-  phoneNumber: z
-    .string()
-    .regex(/^\+?[1-9]\d{1,14}$/, "Invalid phone number format"),
-  amount: z.number().positive("Amount must be positive"),
+  phoneNumber: z.string().regex(/^\+[1-9]\d{1,14}$/),
+  amount: z.number().positive(),
 });
 
-export default async function (fastify: any, opts: any) {
+export default async function (fastify: FastifyInstance) {
   fastify.addHook("preHandler", verifySentraApiKey);
 
   fastify.post(
     "/transaction/initiate",
     {
+      // [B2B IDEMPOTENCY] Prevent duplicate transaction logic execution
+      preHandler: [handleIdempotency],
       schema: {
+        description: "Initiate a new trust-scored transaction with idempotency support",
         tags: ["Transaction"],
         security: [{ apiKey: [] }],
+        headers: {
+          type: "object",
+          properties: {
+            "x-idempotency-key": { type: "string" },
+          },
+        },
         body: {
           type: "object",
           properties: {
@@ -26,35 +35,16 @@ export default async function (fastify: any, opts: any) {
           },
           required: ["phoneNumber", "amount"],
         },
-        response: {
-          200: {
-            type: "object",
-            properties: {
-              transactionId: { type: "string" },
-              approved: { type: "boolean" },
-              trustScore: { type: "number" },
-              riskLevel: { type: "string", enum: ["low", "medium", "high"] },
-              decision: {
-                type: "string",
-                enum: ["ALLOW", "STEP_UP_AUTH", "BLOCK"],
-              },
-              signals: {
-                type: "object",
-                properties: {
-                  simSwap: { type: "boolean" },
-                  deviceChanged: { type: "boolean" },
-                  roaming: { type: "boolean" },
-                },
-              },
-              reasons: { type: "array", items: { type: "string" } },
-            },
-          },
-        },
       },
     },
-    async function (request: any, reply: any) {
+    async function (request: FastifyRequest, reply: FastifyReply) {
       const body = initiateSchema.parse(request.body);
-      const result = await initiateTransaction(body);
+      
+      const result = await initiateTransaction(body, request.sentraUser.uid);
+
+      // [B2B IDEMPOTENCY] Cache result for retries
+      await saveIdempotency(request, 200, result);
+
       return result;
     },
   );

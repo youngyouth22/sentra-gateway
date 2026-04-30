@@ -17,24 +17,25 @@ export interface TransactionResponse extends TrustResult {
 
 export async function initiateTransaction(
   request: TransactionRequest,
+  userId: string, // [SECURITY] Added userId to route webhooks to the correct tenant
 ): Promise<TransactionResponse> {
-  const trustResult = await evaluateTrust(request.phoneNumber);
+  // Pass userId to evaluateTrust so it can trigger the right tenant's webhooks
+  const trustResult = await evaluateTrust(request.phoneNumber, userId);
 
   // [VH-3 FIX] Use cryptographically secure UUID instead of Math.random()
-  // Math.random() is NOT cryptographically secure and produces predictable IDs
   const transactionId = `txn_${randomUUID()}`;
   const approved = trustResult.decision === "ALLOW";
 
-  // Trigger webhooks based on decision — non-blocking (fire & forget)
+  // Trigger webhooks based on decision — routed to specific tenant
   if (trustResult.decision === "BLOCK") {
-    triggerTransactionBlocked({
+    triggerTransactionBlocked(userId, {
       transactionId,
       riskLevel: trustResult.riskLevel,
       decision: trustResult.decision,
       amount: request.amount,
     });
   } else if (trustResult.decision === "STEP_UP_AUTH") {
-    triggerTransactionStepUp({
+    triggerTransactionStepUp(userId, {
       transactionId,
       riskLevel: trustResult.riskLevel,
       decision: trustResult.decision,
