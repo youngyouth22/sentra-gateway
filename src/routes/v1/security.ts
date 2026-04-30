@@ -43,7 +43,7 @@ export default async function (fastify: FastifyInstance) {
     },
     async function (request: FastifyRequest, reply: FastifyReply) {
       const body = preAuthSchema.parse(request.body);
-      const result = await preAuthCheck(body);
+      const result = await preAuthCheck(body, request.sentraUser.uid);
       return result;
     },
   );

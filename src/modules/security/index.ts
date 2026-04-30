@@ -33,8 +33,8 @@ export interface GeofenceResult {
 /**
  * Combine Trust Scoring with Transactional Context for Pre-Auth Check
  */
-export async function preAuthCheck(request: PreAuthCheckRequest): Promise<PreAuthCheckResult> {
-  const trust = await evaluateTrust(request.phoneNumber);
+export async function preAuthCheck(request: PreAuthCheckRequest, userId: string): Promise<PreAuthCheckResult> {
+  const trust = await evaluateTrust(request.phoneNumber, userId);
   
   const isHighAmount = (request.transactionAmount || 0) > 5000;
   let recommendation: "PROCEED" | "CHALLENGE" | "BLOCK" = "PROCEED";
