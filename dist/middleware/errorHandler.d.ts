@@ -1,3 +1,4 @@
 import { FastifyError, FastifyReply, FastifyRequest } from "fastify";
-export declare function errorHandler(error: FastifyError, request: FastifyRequest, reply: FastifyReply): Promise<void>;
+import { ZodError } from "zod";
+export declare function errorHandler(error: FastifyError | ZodError | any, request: FastifyRequest, reply: FastifyReply): Promise<undefined>;
 //# sourceMappingURL=errorHandler.d.ts.map

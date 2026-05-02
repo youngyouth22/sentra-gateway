@@ -17,7 +17,7 @@ export interface WebhookPayload {
 export async function dispatchWebhook(
   url: string,
   payload: WebhookPayload,
-  signingSecret?: string
+  signingSecret?: string,
 ): Promise<void> {
   // [CVE-4 FIX] Runtime SSRF guard
   let parsedUrl: URL;
@@ -31,7 +31,9 @@ export async function dispatchWebhook(
   if (!config.isProduction && parsedUrl.protocol === "http:") {
     // Allow HTTP only in development for local testing
   } else if (parsedUrl.protocol !== "https:") {
-    console.error(`[webhook] Blocked non-HTTPS webhook URL: ${parsedUrl.hostname}`);
+    console.error(
+      `[webhook] Blocked non-HTTPS webhook URL: ${parsedUrl.hostname}`,
+    );
     return;
   }
 
@@ -47,7 +49,9 @@ export async function dispatchWebhook(
     /^::1$/,
   ];
   if (blockedPatterns.some((p) => p.test(parsedUrl.hostname))) {
-    console.error(`[webhook] Blocked SSRF attempt to internal address: ${parsedUrl.hostname}`);
+    console.error(
+      `[webhook] Blocked SSRF attempt to internal address: ${parsedUrl.hostname}`,
+    );
     return;
   }
 
@@ -75,26 +79,43 @@ export async function dispatchWebhook(
       maxRedirects: 0,
     });
     // Log success (non-blocking)
-    supabase.from("webhook_logs").insert({
+    supabase
+      .from("webhook_logs")
+      .insert({
         url,
         event: payload.event,
         status: 200,
-        payload: payload.data
-    }).then(({ error }) => {
-        if (error) console.error("[webhook-log] Error saving success log:", error.message);
-    });
+        payload: payload.data,
+      })
+      .then(({ error }) => {
+        if (error)
+          console.error(
+            "[webhook-log] Error saving success log:",
+            error.message,
+          );
+      });
   } catch (error: any) {
-    console.error(`[webhook] Failed to dispatch ${payload.event} to ${url}:`, error.message);
+    console.error(
+      `[webhook] Failed to dispatch ${payload.event} to ${url}:`,
+      error.message,
+    );
     // Log failure (non-blocking)
-    supabase.from("webhook_logs").insert({
+    supabase
+      .from("webhook_logs")
+      .insert({
         url,
         event: payload.event,
         status: error.response?.status || 500,
         error: error.message,
-        payload: payload.data
-    }).then(({ error: logError }) => {
-        if (logError) console.error("[webhook-log] Error saving failure log:", logError.message);
-    });
+        payload: payload.data,
+      })
+      .then(({ error: logError }) => {
+        if (logError)
+          console.error(
+            "[webhook-log] Error saving failure log:",
+            logError.message,
+          );
+      });
   }
 }
 
@@ -102,47 +123,62 @@ export async function dispatchWebhook(
  * Dispatch a webhook to all active endpoints configured for a specific user/tenant.
  */
 async function dispatchToUser(userId: string, event: string, data: any) {
-    const { data: endpoints, error } = await supabase
-        .from("webhook_endpoints")
-        .select("*")
-        .eq("user_id", userId)
-        .eq("is_active", true)
-        .contains("events", [event]);
+  const { data: endpoints, error } = await supabase
+    .from("webhook_endpoints")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("is_active", true)
+    .contains("events", [event]);
 
-    if (error || !endpoints || endpoints.length === 0) {
-        return;
-    }
+  if (error || !endpoints || endpoints.length === 0) {
+    return;
+  }
 
-    const payload: WebhookPayload = {
-        event,
-        data,
-        timestamp: new Date().toISOString(),
-    };
+  const payload: WebhookPayload = {
+    event,
+    data,
+    timestamp: new Date().toISOString(),
+  };
 
-    // Parallel dispatch to all endpoints
-    await Promise.all(
-        endpoints.map(ep => dispatchWebhook(ep.url, payload, ep.signing_secret))
-    );
+  // Parallel dispatch to all endpoints
+  await Promise.all(
+    endpoints.map((ep) => dispatchWebhook(ep.url, payload, ep.signing_secret)),
+  );
 }
 
 // ── Per-Tenant Webhook Triggers ─────────────────────────────────────────────
 
-export async function triggerTrustAlert(userId: string, data: Record<string, unknown>): Promise<void> {
+export async function triggerTrustAlert(
+  userId: string,
+  data: Record<string, unknown>,
+): Promise<void> {
   await dispatchToUser(userId, "trust.alert", data);
 }
 
-export async function triggerTransactionBlocked(userId: string, data: Record<string, unknown>): Promise<void> {
+export async function triggerTransactionBlocked(
+  userId: string,
+  data: Record<string, unknown>,
+): Promise<void> {
   await dispatchToUser(userId, "transaction.blocked", data);
 }
 
-export async function triggerTransactionStepUp(userId: string, data: Record<string, unknown>): Promise<void> {
+export async function triggerTransactionStepUp(
+  userId: string,
+  data: Record<string, unknown>,
+): Promise<void> {
   await dispatchToUser(userId, "transaction.step_up", data);
 }
 
-export async function triggerEscrowCreated(userId: string, data: Record<string, unknown>): Promise<void> {
+export async function triggerEscrowCreated(
+  userId: string,
+  data: Record<string, unknown>,
+): Promise<void> {
   await dispatchToUser(userId, "escrow.created", data);
 }
 
-export async function triggerEscrowReleased(userId: string, data: Record<string, unknown>): Promise<void> {
+export async function triggerEscrowReleased(
+  userId: string,
+  data: Record<string, unknown>,
+): Promise<void> {
   await dispatchToUser(userId, "escrow.released", data);
 }

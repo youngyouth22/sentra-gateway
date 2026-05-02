@@ -1,0 +1,3 @@
+import { FastifyInstance } from "fastify";
+export default function (fastify: FastifyInstance): Promise<void>;
+//# sourceMappingURL=keys.d.ts.map

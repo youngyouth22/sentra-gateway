@@ -7,5 +7,5 @@ export interface TransactionResponse extends TrustResult {
     transactionId: string;
     approved: boolean;
 }
-export declare function initiateTransaction(request: TransactionRequest): Promise<TransactionResponse>;
+export declare function initiateTransaction(request: TransactionRequest, userId: string): Promise<TransactionResponse>;
 //# sourceMappingURL=index.d.ts.map

@@ -87,17 +87,23 @@ export default async function (fastify: FastifyInstance, opts: FastifyPluginOpti
   // [VH-2 FIX] API documentation is never exposed in production
   await fastify.register(swagger, {
     openapi: {
-      openapi: "3.0.0",
       info: {
-        title: "SENTRA Trust Scoring API",
-        description: "AI-driven Trust Scoring API for fintech fraud prevention",
+        title: "SENTRA Trust Scoring & Identity Gateway",
+        description: "SENTRA is an AI-driven trust scoring engine that leverages the Nokia Network-as-Code Nexus and collective intelligence to prevent fintech fraud. This API provides real-time network signals, transaction security, and silent authentication.",
         version: "1.0.0",
+        contact: {
+          name: "Sentra Security Team",
+          url: "https://sentra.io",
+          email: "security@sentra.io"
+        }
+      },
+      externalDocs: {
+        url: "https://docs.sentra.io",
+        description: "Find more info here"
       },
       servers: [
         {
-          url: config.isProduction
-            ? "https://api.sentra.io"
-            : "http://localhost:3000",
+          url: config.apiUrl,
           description: config.isProduction ? "Production" : "Development server",
         },
       ],

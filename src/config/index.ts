@@ -8,6 +8,8 @@ const envSchema = z.object({
   NODE_ENV: z
     .enum(["development", "test", "production"])
     .default("development"),
+  API_URL: z.string().url().optional(),
+  RENDER_EXTERNAL_URL: z.string().url().optional(),
   // [CVE-2] JWT_SECRET is now REQUIRED with minimum 32 chars
   JWT_SECRET: z
     .string()
@@ -43,6 +45,7 @@ if (!envServer.success) {
 export const config = {
   port: envServer.data.PORT,
   nodeEnv: envServer.data.NODE_ENV,
+  apiUrl: envServer.data.API_URL || envServer.data.RENDER_EXTERNAL_URL || (envServer.data.NODE_ENV === "production" ? "https://sentra-gateway.onrender.com" : `http://localhost:${envServer.data.PORT}`),
   apiKey: envServer.data.API_KEY,
   nokiaToken: envServer.data.NOKIA_API_KEY,
   nokiaEnv: envServer.data.NOKIA_ENV,

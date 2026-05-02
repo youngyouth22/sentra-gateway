@@ -1,44 +1,51 @@
 import { z } from "zod";
+import { checkKYC, autoFillKYC } from "../../modules/kyc/index.js";
+import { verifySentraApiKey } from "../../middleware/auth.js";
 const checkSchema = z.object({
-    userId: z.string(),
+    phoneNumber: z.string().regex(/^\+?[1-9]\d{1,14}$/),
+    idNumber: z.string().optional(),
+    fullName: z.string().optional(),
 });
 const autoFillSchema = z.object({
-    userId: z.string(),
+    phoneNumber: z.string().regex(/^\+?[1-9]\d{1,14}$/),
 });
-export default async function (fastify, opts) {
+export default async function (fastify) {
+    fastify.addHook("preHandler", verifySentraApiKey);
     fastify.post("/kyc/check", {
         schema: {
+            description: "Verify identity using network-provided KYC data",
+            tags: ["KYC"],
             body: {
                 type: "object",
                 properties: {
-                    userId: { type: "string" },
+                    phoneNumber: { type: "string" },
+                    idNumber: { type: "string" },
+                    fullName: { type: "string" },
                 },
-                required: ["userId"],
+                required: ["phoneNumber"],
             },
         },
     }, async function (request, reply) {
-        const { userId } = checkSchema.parse(request.body);
-        // Implement KYC check
-        return { eligible: true, status: "approved" };
+        const body = checkSchema.parse(request.body);
+        const result = await checkKYC(body);
+        return result;
     });
     fastify.get("/kyc/auto-fill", {
         schema: {
+            description: "Automatically retrieve user profile data from network operator",
+            tags: ["KYC"],
             querystring: {
                 type: "object",
                 properties: {
-                    userId: { type: "string" },
+                    phoneNumber: { type: "string" },
                 },
-                required: ["userId"],
+                required: ["phoneNumber"],
             },
         },
     }, async function (request, reply) {
-        const { userId } = autoFillSchema.parse(request.query);
-        // Implement auto-fill
-        return {
-            name: "John Doe",
-            address: "123 Main St",
-            dob: "1990-01-01",
-        };
+        const { phoneNumber } = autoFillSchema.parse(request.query);
+        const result = await autoFillKYC(phoneNumber);
+        return result;
     });
 }
 //# sourceMappingURL=kyc.js.map
