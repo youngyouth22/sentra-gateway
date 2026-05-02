@@ -40,6 +40,21 @@ export default async function (fastify: FastifyInstance) {
           },
           required: ["token"],
         },
+        response: {
+          200: {
+            description: "Verification successful",
+            type: "object",
+            properties: {
+              verified: { type: "boolean" },
+              phoneNumber: { type: "string" },
+              network: { type: "string" }
+            }
+          },
+          400: { $ref: "ErrorResponse#" },
+          401: { $ref: "ErrorResponse#" },
+          403: { $ref: "ErrorResponse#" },
+          500: { $ref: "ErrorResponse#" }
+        }
       },
     },
     async function (request: FastifyRequest, reply: FastifyReply) {
@@ -68,6 +83,21 @@ export default async function (fastify: FastifyInstance) {
           },
           required: ["deviceId", "phoneNumber"],
         },
+        response: {
+          200: {
+            description: "Device bound successfully",
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              deviceId: { type: "string" },
+              status: { type: "string", enum: ["ACTIVE", "PENDING"] }
+            }
+          },
+          400: { $ref: "ErrorResponse#" },
+          401: { $ref: "ErrorResponse#" },
+          403: { $ref: "ErrorResponse#" },
+          500: { $ref: "ErrorResponse#" }
+        }
       },
     },
     async function (request: FastifyRequest, reply: FastifyReply) {

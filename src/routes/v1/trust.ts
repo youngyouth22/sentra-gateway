@@ -56,6 +56,24 @@ export default async function (fastify: FastifyInstance) {
           },
           required: ["phoneNumber"],
         },
+        response: {
+          200: {
+            description: "Trust evaluation result",
+            type: "object",
+            properties: {
+              trustScore: { type: "number" },
+              riskLevel: { type: "string", enum: ["low", "medium", "high"] },
+              decision: { type: "string", enum: ["ALLOW", "STEP_UP_AUTH", "BLOCK"] },
+              signals: { type: "object", additionalProperties: true },
+              reasons: { type: "array", items: { type: "string" } }
+            }
+          },
+          400: { $ref: "ErrorResponse#" },
+          401: { $ref: "ErrorResponse#" },
+          403: { $ref: "ErrorResponse#" },
+          429: { $ref: "ErrorResponse#" },
+          500: { $ref: "ErrorResponse#" },
+        }
       },
     },
     async function (request: FastifyRequest<{ Body: EvaluateBody }>, reply: FastifyReply) {
@@ -95,6 +113,23 @@ export default async function (fastify: FastifyInstance) {
           },
           required: ["phoneNumber", "type", "severity"],
         },
+        response: {
+          200: {
+            description: "Fraud report processed",
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              message: { type: "string" },
+              reportId: { type: "string" }
+            }
+          },
+          400: { $ref: "ErrorResponse#" },
+          401: { $ref: "ErrorResponse#" },
+          403: { $ref: "ErrorResponse#" },
+          404: { $ref: "ErrorResponse#" },
+          429: { $ref: "ErrorResponse#" },
+          500: { $ref: "ErrorResponse#" },
+        }
       },
     },
     async function (request: FastifyRequest<{ Body: ReportFraudBody }>, reply: FastifyReply) {

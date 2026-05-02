@@ -118,6 +118,28 @@ export default async function (fastify: FastifyInstance, opts: FastifyPluginOpti
         { name: "Analytics", description: "Usage analytics" },
       ],
       components: {
+        schemas: {
+          ErrorResponse: {
+            type: "object",
+            properties: {
+              statusCode: { type: "integer", example: 400 },
+              code: { type: "string", example: "validation_failed" },
+              message: { type: "string", example: "Validation failed" },
+              details: { 
+                type: "array", 
+                items: { 
+                  type: "object", 
+                  properties: { 
+                    path: { type: "string" }, 
+                    message: { type: "string" } 
+                  } 
+                } 
+              },
+              referenceId: { type: "string", example: "req-12345" }
+            },
+            required: ["statusCode", "code", "message", "referenceId"]
+          }
+        },
         securitySchemes: {
           apiKey: {
             type: "apiKey",

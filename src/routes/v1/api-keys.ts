@@ -28,6 +28,7 @@ export default async function (fastify: FastifyInstance) {
         },
         response: {
           201: {
+            description: "API key created",
             type: "object",
             properties: {
               id: { type: "string" },
@@ -36,6 +37,9 @@ export default async function (fastify: FastifyInstance) {
               createdAt: { type: "string" },
             },
           },
+          400: { $ref: "ErrorResponse#" },
+          401: { $ref: "ErrorResponse#" },
+          500: { $ref: "ErrorResponse#" }
         },
       },
     },
@@ -55,6 +59,7 @@ export default async function (fastify: FastifyInstance) {
         security: [{ bearerAuth: [] }],
         response: {
           200: {
+            description: "List of API keys",
             type: "array",
             items: {
               type: "object",
@@ -66,6 +71,8 @@ export default async function (fastify: FastifyInstance) {
               },
             },
           },
+          401: { $ref: "ErrorResponse#" },
+          500: { $ref: "ErrorResponse#" }
         },
       },
     },
@@ -91,6 +98,9 @@ export default async function (fastify: FastifyInstance) {
         },
         response: {
           204: { type: "null" },
+          401: { $ref: "ErrorResponse#" },
+          404: { $ref: "ErrorResponse#" },
+          500: { $ref: "ErrorResponse#" }
         },
       },
     },

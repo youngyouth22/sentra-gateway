@@ -31,6 +31,21 @@ export default async function (fastify: FastifyInstance) {
           },
           required: ["url"],
         },
+        response: {
+          201: {
+            description: "Webhook registered",
+            type: "object",
+            properties: {
+              id: { type: "string" },
+              url: { type: "string" },
+              events: { type: "array", items: { type: "string" } },
+              signing_secret: { type: "string" }
+            }
+          },
+          400: { $ref: "ErrorResponse#" },
+          401: { $ref: "ErrorResponse#" },
+          500: { $ref: "ErrorResponse#" }
+        }
       },
     },
     async function (request: FastifyRequest, reply: FastifyReply) {
@@ -74,6 +89,22 @@ export default async function (fastify: FastifyInstance) {
         description: "List all webhook endpoints for the authenticated user",
         tags: ["API Management"],
         security: [{ bearerAuth: [] }],
+        response: {
+          200: {
+            description: "List of webhooks",
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                id: { type: "string" },
+                url: { type: "string" },
+                events: { type: "array", items: { type: "string" } }
+              }
+            }
+          },
+          401: { $ref: "ErrorResponse#" },
+          500: { $ref: "ErrorResponse#" }
+        }
       },
     },
     async function (request: FastifyRequest, reply: FastifyReply) {
@@ -107,6 +138,12 @@ export default async function (fastify: FastifyInstance) {
           },
           required: ["id"],
         },
+        response: {
+          204: { type: "null" },
+          400: { $ref: "ErrorResponse#" },
+          401: { $ref: "ErrorResponse#" },
+          500: { $ref: "ErrorResponse#" }
+        }
       },
     },
     async function (request: FastifyRequest, reply: FastifyReply) {

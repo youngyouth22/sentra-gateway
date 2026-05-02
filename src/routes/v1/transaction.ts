@@ -35,6 +35,24 @@ export default async function (fastify: FastifyInstance) {
           },
           required: ["phoneNumber", "amount"],
         },
+        response: {
+          200: {
+            description: "Transaction initiation result",
+            type: "object",
+            properties: {
+              transactionId: { type: "string" },
+              status: { type: "string", enum: ["APPROVED", "BLOCKED", "PENDING_CHALLENGE"] },
+              trustScore: { type: "number" },
+              requiresChallenge: { type: "boolean" },
+              reason: { type: "string" }
+            }
+          },
+          400: { $ref: "ErrorResponse#" },
+          401: { $ref: "ErrorResponse#" },
+          403: { $ref: "ErrorResponse#" },
+          429: { $ref: "ErrorResponse#" },
+          500: { $ref: "ErrorResponse#" },
+        }
       },
     },
     async function (request: FastifyRequest, reply: FastifyReply) {

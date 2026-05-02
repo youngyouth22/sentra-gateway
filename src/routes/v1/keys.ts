@@ -28,6 +28,21 @@ export default async function (fastify: FastifyInstance) {
           },
           required: ["name"],
         },
+        response: {
+          201: {
+            description: "API key created",
+            type: "object",
+            properties: {
+              id: { type: "string" },
+              name: { type: "string" },
+              rawKey: { type: "string" },
+              createdAt: { type: "string" }
+            }
+          },
+          400: { $ref: "ErrorResponse#" },
+          401: { $ref: "ErrorResponse#" },
+          500: { $ref: "ErrorResponse#" }
+        }
       },
     },
     async function (request: FastifyRequest, reply: FastifyReply) {
@@ -49,6 +64,23 @@ export default async function (fastify: FastifyInstance) {
         description: "List all active API keys",
         tags: ["Key Management"],
         security: [{ bearerAuth: [] }],
+        response: {
+          200: {
+            description: "List of API keys",
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                id: { type: "string" },
+                name: { type: "string" },
+                createdAt: { type: "string" },
+                lastUsedAt: { type: "string", nullable: true }
+              }
+            }
+          },
+          401: { $ref: "ErrorResponse#" },
+          500: { $ref: "ErrorResponse#" }
+        }
       },
     },
     async function (request: FastifyRequest, reply: FastifyReply) {
@@ -74,6 +106,12 @@ export default async function (fastify: FastifyInstance) {
           },
           required: ["id"],
         },
+        response: {
+          204: { type: "null" },
+          401: { $ref: "ErrorResponse#" },
+          404: { $ref: "ErrorResponse#" },
+          500: { $ref: "ErrorResponse#" }
+        }
       },
     },
     async function (request: FastifyRequest, reply: FastifyReply) {
