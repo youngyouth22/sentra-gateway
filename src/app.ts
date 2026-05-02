@@ -19,6 +19,29 @@ export default async function (fastify: FastifyInstance, opts: FastifyPluginOpti
   // Set custom error handler
   fastify.setErrorHandler(errorHandler);
 
+  // Add global schema for standard error responses so AJV can resolve $ref: "ErrorResponse#"
+  fastify.addSchema({
+    $id: "ErrorResponse",
+    type: "object",
+    properties: {
+      statusCode: { type: "integer", example: 400 },
+      code: { type: "string", example: "validation_failed" },
+      message: { type: "string", example: "Validation failed" },
+      details: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            path: { type: "string" },
+            message: { type: "string" },
+          },
+        },
+      },
+      referenceId: { type: "string", example: "req-12345" },
+    },
+    required: ["statusCode", "code", "message", "referenceId"],
+  });
+
   // ── Security Headers (Helmet) ─────────────────────────────────────────────
   // [VH-1] Fixed: removed 'unsafe-inline' from scriptSrc
   await fastify.register(helmet, {
