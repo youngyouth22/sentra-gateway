@@ -55,26 +55,27 @@ export async function preAuthCheck(request: PreAuthCheckRequest, userId: string)
 
 /**
  * Verify device location using Network-Level Geofencing (Anti-Spoofing)
+ * Uses the proper Location Verification API instead of Location Retrieval
+ * to preserve user privacy (no coordinates exposed) and ensure high security.
  */
 export async function checkGeofence(request: GeofenceRequest): Promise<GeofenceResult> {
   try {
     const device = nacClient.devices.get({ phoneNumber: request.phoneNumber });
-    const location = await device.getLocation();
-
-    if (!location) {
-        throw new Error("Location data unavailable from network");
-    }
-
-    const distance = calculateDistance(
-        location.latitude, 
-        location.longitude, 
-        request.latitude, 
-        request.longitude
+    
+    // The NaC SDK exposes verifyLocation which does the distance calculation securely on the telecom network side
+    const verification = await device.verifyLocation(
+      request.latitude,
+      request.longitude,
+      request.radius
     );
 
+    if (!verification) {
+        throw new Error("Location verification unavailable from network");
+    }
+
     return {
-      withinArea: distance <= request.radius,
-      distanceFromCenter: Math.round(distance),
+      withinArea: verification.resultType === 'TRUE' || verification.resultType === 'PARTIAL',
+      distanceFromCenter: -1, // Not exposed for privacy reasons
     };
   } catch (error: any) {
     return {
@@ -85,20 +86,4 @@ export async function checkGeofence(request: GeofenceRequest): Promise<GeofenceR
   }
 }
 
-/**
- * Haversine formula for distance calculation
- */
-function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371e3; // metres
-  const φ1 = lat1 * Math.PI/180;
-  const φ2 = lat2 * Math.PI/180;
-  const Δφ = (lat2-lat1) * Math.PI/180;
-  const Δλ = (lon2-lon1) * Math.PI/180;
 
-  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-          Math.cos(φ1) * Math.cos(φ2) *
-          Math.sin(Δλ/2) * Math.sin(Δλ/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-
-  return R * c; // in metres
-}

@@ -10,6 +10,8 @@ export interface TrustSignals {
   simSwap: boolean;
   deviceChanged: boolean;
   roaming: boolean;
+  callForwarding: boolean;
+  unreachable: boolean;
 }
 
 export interface TrustResult {
@@ -50,20 +52,24 @@ export async function evaluateTrust(phoneNumber: string, userId: string): Promis
   }
 
   // 2. Call Nokia Network-as-Code APIs for real-time network signals
-  const [simSwapResult, deviceStatusResult, locationResult] = await Promise.all([
+  const [simSwapResult, deviceStatusResult, locationResult, forwardingResult, reachabilityResult] = await Promise.all([
     getSimSwapStatus(phoneNumber),
     getDeviceStatus(phoneNumber),
     getLocationStatus(phoneNumber),
+    getCallForwardingStatus(phoneNumber),
+    getReachabilityStatus(phoneNumber),
   ]);
 
   const signals: TrustSignals = {
     simSwap: simSwapResult.swapped || false,
     deviceChanged: deviceStatusResult.changed || false,
     roaming: locationResult.roaming || false,
+    callForwarding: forwardingResult.forwarding || false,
+    unreachable: reachabilityResult.unreachable || false,
   };
 
   // 3. Persist new signals to the Nexus for global learning
-  if (signals.simSwap || signals.deviceChanged || signals.roaming) {
+  if (signals.simSwap || signals.deviceChanged || signals.roaming || signals.callForwarding || signals.unreachable) {
     const signalsToInsert = [];
     if (signals.simSwap)
       signalsToInsert.push({
@@ -84,6 +90,18 @@ export async function evaluateTrust(phoneNumber: string, userId: string): Promis
         signal_type: "roaming" as const,
         severity_level: 2,
       });
+    if (signals.callForwarding)
+      signalsToInsert.push({
+        identity_id: identity.id,
+        signal_type: "call_forwarding" as const,
+        severity_level: 5, // High risk - indicates potential OTP interception
+      });
+    if (signals.unreachable)
+      signalsToInsert.push({
+        identity_id: identity.id,
+        signal_type: "unreachable_device" as const,
+        severity_level: 4, // High risk - indicates potential bot or virtual number
+      });
 
     await supabase.from("identity_signals").insert(signalsToInsert);
 
@@ -103,6 +121,8 @@ export async function evaluateTrust(phoneNumber: string, userId: string): Promis
   if (signals.simSwap) reasons.push("SIM card was recently swapped");
   if (signals.deviceChanged) reasons.push("Device has changed");
   if (signals.roaming) reasons.push("Device is roaming");
+  if (signals.callForwarding) reasons.push("Call forwarding is active (Potential OTP interception)");
+  if (signals.unreachable) reasons.push("Device is unreachable or offline (Potential virtual number/bot)");
   if (finalScore < 50 && reasons.length === 0)
     reasons.push("Negative reputation in the Sentra Nexus network");
 
@@ -171,6 +191,32 @@ async function getLocationStatus(phoneNumber: string): Promise<{ roaming: boolea
     return { roaming };
   } catch {
     return { roaming: false };
+  }
+}
+
+async function getCallForwardingStatus(phoneNumber: string): Promise<{ forwarding: boolean }> {
+  try {
+    const device = nacClient.devices.get({ phoneNumber });
+    // Verifies if unconditional call forwarding is active (a massive fraud indicator)
+    const forwarding = await device.verifyUnconditionalForwarding();
+    return { forwarding: Boolean(forwarding) };
+  } catch {
+    // Fail safe to false if API is unavailable or user hasn't consented
+    return { forwarding: false };
+  }
+}
+
+async function getReachabilityStatus(phoneNumber: string): Promise<{ unreachable: boolean }> {
+  try {
+    const device = nacClient.devices.get({ phoneNumber });
+    // Connectivity status returns the attachment state of the device to the network
+    const connectivity = await device.getConnectivity();
+    
+    // An unreachable device during a transaction is highly suspicious (often indicating a bot or disconnected VoIP number)
+    const isReachable = typeof connectivity === "string" && connectivity.toUpperCase().includes("CONNECTED");
+    return { unreachable: !isReachable };
+  } catch {
+    return { unreachable: false }; // Fail open
   }
 }
 

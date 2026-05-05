@@ -33,19 +33,18 @@ export async function checkKYC(request: KYCCheckRequest): Promise<KYCCheckResult
   try {
     const device = nacClient.devices.get({ phoneNumber: request.phoneNumber });
     
-    // In a real production SDK, we call the kycMatch functionality
-    // Note: implementation details depend on the specific CAMARA provider mapping in the SDK
-    const kycResult = await (device as any).verifyKyc({
+    // The CAMARA KYC Match API is exposed via matchCustomer in the SDK
+    const kycResult = await (device as any).matchCustomer({
       name: request.fullName,
-      idNumber: request.idNumber
+      idDocument: request.idNumber
     });
 
     return {
       verified: kycResult.verified || false,
-      matchScore: kycResult.score || 0,
+      matchScore: kycResult.matchRate || 0,
       details: {
         nameMatch: kycResult.nameMatch || false,
-        idMatch: kycResult.idMatch || false,
+        idMatch: kycResult.idDocumentMatch || false,
       },
     };
   } catch (error) {

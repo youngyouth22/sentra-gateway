@@ -5,15 +5,25 @@ import { hashPhone } from "../trust/index.js";
 
 const nacClient = new NetworkAsCodeClient(config.nokiaToken, config.nokiaEnv);
 
-export interface SilentVerifyRequest {
-  token: string;
-  ipAddress?: string;
-  ownerId: string;
+export interface InitSilentVerifyRequest {
+  phoneNumber: string;
+  redirectUri: string;
 }
 
-export interface SilentVerifyResult {
+export interface InitSilentVerifyResult {
+  authorizationUrl: string;
+  state: string;
+}
+
+export interface VerifySilentVerifyRequest {
+  phoneNumber: string;
+  code: string;
+  state: string;
+}
+
+export interface VerifySilentVerifyResult {
   success: boolean;
-  phoneNumber?: string;
+  verified: boolean;
   error?: string;
 }
 
@@ -28,36 +38,48 @@ export interface DeviceBindResult {
   bindingId: string;
 }
 
-/**
- * Perform Silent Authentication using CAMARA Number Verification.
- */
-export async function silentVerify(request: SilentVerifyRequest): Promise<SilentVerifyResult> {
-  // [VH-8 FIX] Reject requests with no IP — do NOT fallback to 127.0.0.1
-  // Using the loopback address in a CAMARA network verification is semantically wrong
-  if (!request.ipAddress || request.ipAddress === "127.0.0.1" || request.ipAddress === "::1") {
-    return {
-      success: false,
-      error: "A valid client IP address is required for network verification",
-    };
-  }
+import { randomUUID } from "crypto";
 
+/**
+ * Initialize Silent Authentication using CAMARA Number Verification.
+ * Returns the authorization URL to redirect the user's cellular device to.
+ */
+export async function initSilentVerify(request: InitSilentVerifyRequest): Promise<InitSilentVerifyResult> {
+  const state = randomUUID();
+  // CAMARA standard scope for Number Verification
+  const scope = "dpv:FraudPreventionAndDetection number-verification:verify";
+  
+  const authorizationUrl = await nacClient.authorization.createAuthorizationLink(
+    request.redirectUri,
+    scope,
+    request.phoneNumber,
+    state
+  );
+
+  return { authorizationUrl, state };
+}
+
+/**
+ * Complete Silent Authentication using the access code and state.
+ */
+export async function silentVerify(request: VerifySilentVerifyRequest): Promise<VerifySilentVerifyResult> {
   try {
     const device = nacClient.devices.get({
-      ipv4Address: {
-        publicAddress: request.ipAddress,
-      },
+      phoneNumber: request.phoneNumber,
     });
 
-    const isVerified = await device.verifySimSwap(24);
+    // The SDK exchanges the code for a token and verifies the number automatically
+    const isVerified = await device.verifyNumber(request.code, request.state);
 
     return {
       success: true,
-      phoneNumber: device.phoneNumber,
+      verified: isVerified,
     };
   } catch (error) {
     return {
       success: false,
-      error: "Network verification failed",
+      verified: false,
+      error: "Number verification failed. Code may be invalid or expired.",
     };
   }
 }
