@@ -61,12 +61,15 @@ export async function dispatchWebhook(url, payload, signingSecret) {
             maxRedirects: 0,
         });
         // Log success (non-blocking)
-        supabase.from("webhook_logs").insert({
+        supabase
+            .from("webhook_logs")
+            .insert({
             url,
             event: payload.event,
             status: 200,
-            payload: payload.data
-        }).then(({ error }) => {
+            payload: payload.data,
+        })
+            .then(({ error }) => {
             if (error)
                 console.error("[webhook-log] Error saving success log:", error.message);
         });
@@ -74,13 +77,16 @@ export async function dispatchWebhook(url, payload, signingSecret) {
     catch (error) {
         console.error(`[webhook] Failed to dispatch ${payload.event} to ${url}:`, error.message);
         // Log failure (non-blocking)
-        supabase.from("webhook_logs").insert({
+        supabase
+            .from("webhook_logs")
+            .insert({
             url,
             event: payload.event,
             status: error.response?.status || 500,
             error: error.message,
-            payload: payload.data
-        }).then(({ error: logError }) => {
+            payload: payload.data,
+        })
+            .then(({ error: logError }) => {
             if (logError)
                 console.error("[webhook-log] Error saving failure log:", logError.message);
         });
@@ -105,7 +111,7 @@ async function dispatchToUser(userId, event, data) {
         timestamp: new Date().toISOString(),
     };
     // Parallel dispatch to all endpoints
-    await Promise.all(endpoints.map(ep => dispatchWebhook(ep.url, payload, ep.signing_secret)));
+    await Promise.all(endpoints.map((ep) => dispatchWebhook(ep.url, payload, ep.signing_secret)));
 }
 // ── Per-Tenant Webhook Triggers ─────────────────────────────────────────────
 export async function triggerTrustAlert(userId, data) {

@@ -11,6 +11,34 @@ export default async function (fastify) {
             description: "Get API usage analytics and billing summary",
             tags: ["Analytics"],
             security: [{ bearerAuth: [] }],
+            response: {
+                200: {
+                    description: "Usage summary",
+                    type: "object",
+                    properties: {
+                        totalRequests: { type: "number" },
+                        successCount: { type: "number" },
+                        errorCount: { type: "number" },
+                        avgResponseTime: { type: "number" },
+                        requestsByEndpoint: { type: "object", additionalProperties: { type: "number" } },
+                        lastRequests: {
+                            type: "array",
+                            items: {
+                                type: "object",
+                                properties: {
+                                    id: { type: "string" },
+                                    endpoint: { type: "string" },
+                                    statusCode: { type: "number" },
+                                    responseTime: { type: "number" },
+                                    createdAt: { type: "string" }
+                                }
+                            }
+                        }
+                    }
+                },
+                401: { $ref: "ErrorResponse#" },
+                500: { $ref: "ErrorResponse#" }
+            }
         },
     }, async function (request, reply) {
         const logs = await db.getUsageByUser(request.sentraUser.uid);

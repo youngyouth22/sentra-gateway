@@ -1,10 +1,19 @@
 import { z } from "zod";
-import { silentVerify, bindDevice } from "../../modules/auth/index.js";
+import { initSilentVerify, silentVerify, bindDevice } from "../../modules/auth/index.js";
 // [CVE-3 FIX] Import authentication — these endpoints were completely unprotected
 import { verifySentraApiKey } from "../../middleware/auth.js";
-const silentVerifySchema = z.object({
-    // [SECURITY] Validate token format to prevent injection
-    token: z.string().min(1).max(2048),
+const initSilentVerifySchema = z.object({
+    phoneNumber: z
+        .string()
+        .regex(/^\+[1-9]\d{1,14}$/, "Phone number must be in E.164 format (e.g. +33612345678)"),
+    redirectUri: z.string().url("Must be a valid URL"),
+});
+const verifySilentVerifySchema = z.object({
+    phoneNumber: z
+        .string()
+        .regex(/^\+[1-9]\d{1,14}$/, "Phone number must be in E.164 format (e.g. +33612345678)"),
+    code: z.string().min(1),
+    state: z.string().min(1),
 });
 const deviceBindSchema = z.object({
     // [SECURITY] Limit deviceId length and format
@@ -21,26 +30,72 @@ export default async function (fastify) {
     // [CVE-3 FIX] All auth routes now require a valid Sentra API key
     // Without this hook, ANY anonymous request could trigger device binding
     fastify.addHook("preHandler", verifySentraApiKey);
-    fastify.post("/auth/silent-verify", {
+    fastify.post("/auth/silent-verify/init", {
         schema: {
-            description: "Verify phone number silently using network tokens (requires API key)",
+            description: "Initialize Silent Authentication (Number Verification) and get authorization URL",
             tags: ["Auth"],
             security: [{ apiKey: [] }],
             body: {
                 type: "object",
                 properties: {
-                    token: { type: "string", maxLength: 2048 },
+                    phoneNumber: { type: "string" },
+                    redirectUri: { type: "string", format: "uri" },
                 },
-                required: ["token"],
+                required: ["phoneNumber", "redirectUri"],
             },
+            response: {
+                200: {
+                    description: "Initialization successful",
+                    type: "object",
+                    properties: {
+                        authorizationUrl: { type: "string" },
+                        state: { type: "string" }
+                    }
+                },
+                400: { $ref: "ErrorResponse#" },
+                401: { $ref: "ErrorResponse#" },
+                403: { $ref: "ErrorResponse#" },
+                500: { $ref: "ErrorResponse#" }
+            }
         },
     }, async function (request, reply) {
-        const body = silentVerifySchema.parse(request.body);
-        const result = await silentVerify({
-            ...body,
-            ipAddress: request.ip,
-            ownerId: request.sentraUser.uid, // Scopes verification to the authenticated API key owner
-        });
+        const body = initSilentVerifySchema.parse(request.body);
+        const result = await initSilentVerify(body);
+        return result;
+    });
+    fastify.post("/auth/silent-verify/verify", {
+        schema: {
+            description: "Complete Silent Authentication using access code from the operator callback",
+            tags: ["Auth"],
+            security: [{ apiKey: [] }],
+            body: {
+                type: "object",
+                properties: {
+                    phoneNumber: { type: "string" },
+                    code: { type: "string" },
+                    state: { type: "string" }
+                },
+                required: ["phoneNumber", "code", "state"],
+            },
+            response: {
+                200: {
+                    description: "Verification result",
+                    type: "object",
+                    properties: {
+                        success: { type: "boolean" },
+                        verified: { type: "boolean" },
+                        error: { type: "string" }
+                    }
+                },
+                400: { $ref: "ErrorResponse#" },
+                401: { $ref: "ErrorResponse#" },
+                403: { $ref: "ErrorResponse#" },
+                500: { $ref: "ErrorResponse#" }
+            }
+        },
+    }, async function (request, reply) {
+        const body = verifySilentVerifySchema.parse(request.body);
+        const result = await silentVerify(body);
         return result;
     });
     fastify.post("/auth/device-bind", {
@@ -56,6 +111,21 @@ export default async function (fastify) {
                 },
                 required: ["deviceId", "phoneNumber"],
             },
+            response: {
+                200: {
+                    description: "Device bound successfully",
+                    type: "object",
+                    properties: {
+                        success: { type: "boolean" },
+                        deviceId: { type: "string" },
+                        status: { type: "string", enum: ["ACTIVE", "PENDING"] }
+                    }
+                },
+                400: { $ref: "ErrorResponse#" },
+                401: { $ref: "ErrorResponse#" },
+                403: { $ref: "ErrorResponse#" },
+                500: { $ref: "ErrorResponse#" }
+            }
         },
     }, async function (request, reply) {
         const body = deviceBindSchema.parse(request.body);

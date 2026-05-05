@@ -24,6 +24,20 @@ export default async function (fastify) {
                 },
                 required: ["phoneNumber"],
             },
+            response: {
+                200: {
+                    description: "KYC Check result",
+                    type: "object",
+                    properties: {
+                        match: { type: "boolean" },
+                        matchScore: { type: "number" },
+                        mismatchedFields: { type: "array", items: { type: "string" } }
+                    }
+                },
+                400: { $ref: "ErrorResponse#" },
+                401: { $ref: "ErrorResponse#" },
+                500: { $ref: "ErrorResponse#" }
+            }
         },
     }, async function (request, reply) {
         const body = checkSchema.parse(request.body);
@@ -41,6 +55,22 @@ export default async function (fastify) {
                 },
                 required: ["phoneNumber"],
             },
+            response: {
+                200: {
+                    description: "Auto-fill data",
+                    type: "object",
+                    properties: {
+                        fullName: { type: "string" },
+                        address: { type: "string" },
+                        dateOfBirth: { type: "string" },
+                        status: { type: "string" }
+                    }
+                },
+                400: { $ref: "ErrorResponse#" },
+                401: { $ref: "ErrorResponse#" },
+                404: { $ref: "ErrorResponse#" },
+                500: { $ref: "ErrorResponse#" }
+            }
         },
     }, async function (request, reply) {
         const { phoneNumber } = autoFillSchema.parse(request.query);

@@ -3,34 +3,38 @@ import { config } from "../../config/index.js";
 import { supabase } from "../../plugins/supabase.js";
 import { hashPhone } from "../trust/index.js";
 const nacClient = new NetworkAsCodeClient(config.nokiaToken, config.nokiaEnv);
+import { randomUUID } from "crypto";
 /**
- * Perform Silent Authentication using CAMARA Number Verification.
+ * Initialize Silent Authentication using CAMARA Number Verification.
+ * Returns the authorization URL to redirect the user's cellular device to.
+ */
+export async function initSilentVerify(request) {
+    const state = randomUUID();
+    // CAMARA standard scope for Number Verification
+    const scope = "dpv:FraudPreventionAndDetection number-verification:verify";
+    const authorizationUrl = await nacClient.authorization.createAuthorizationLink(request.redirectUri, scope, request.phoneNumber, state);
+    return { authorizationUrl, state };
+}
+/**
+ * Complete Silent Authentication using the access code and state.
  */
 export async function silentVerify(request) {
-    // [VH-8 FIX] Reject requests with no IP — do NOT fallback to 127.0.0.1
-    // Using the loopback address in a CAMARA network verification is semantically wrong
-    if (!request.ipAddress || request.ipAddress === "127.0.0.1" || request.ipAddress === "::1") {
-        return {
-            success: false,
-            error: "A valid client IP address is required for network verification",
-        };
-    }
     try {
         const device = nacClient.devices.get({
-            ipv4Address: {
-                publicAddress: request.ipAddress,
-            },
+            phoneNumber: request.phoneNumber,
         });
-        const isVerified = await device.verifySimSwap(24);
+        // The SDK exchanges the code for a token and verifies the number automatically
+        const isVerified = await device.verifyNumber(request.code, request.state);
         return {
             success: true,
-            phoneNumber: device.phoneNumber,
+            verified: isVerified,
         };
     }
     catch (error) {
         return {
             success: false,
-            error: "Network verification failed",
+            verified: false,
+            error: "Number verification failed. Code may be invalid or expired.",
         };
     }
 }

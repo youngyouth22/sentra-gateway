@@ -1,1 +1,1 @@
-{"version":3,"file":"trust.d.ts","sourceRoot":"","sources":["../../../src/routes/v1/trust.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,eAAe,EAAgC,MAAM,SAAS,CAAC;AA6BxE,yBAA+B,OAAO,EAAE,eAAe,iBAyFtD"}
+{"version":3,"file":"trust.d.ts","sourceRoot":"","sources":["../../../src/routes/v1/trust.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,eAAe,EAAgC,MAAM,SAAS,CAAC;AA6BxE,yBAA+B,OAAO,EAAE,eAAe,iBA4HtD"}

@@ -25,6 +25,8 @@ export interface GeofenceResult {
 export declare function preAuthCheck(request: PreAuthCheckRequest, userId: string): Promise<PreAuthCheckResult>;
 /**
  * Verify device location using Network-Level Geofencing (Anti-Spoofing)
+ * Uses the proper Location Verification API instead of Location Retrieval
+ * to preserve user privacy (no coordinates exposed) and ensure high security.
  */
 export declare function checkGeofence(request: GeofenceRequest): Promise<GeofenceResult>;
 //# sourceMappingURL=index.d.ts.map

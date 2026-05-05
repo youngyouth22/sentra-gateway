@@ -1,1 +1,1 @@
-{"version":3,"file":"escrow.d.ts","sourceRoot":"","sources":["../../../src/routes/v1/escrow.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,eAAe,EAAgC,MAAM,SAAS,CAAC;AAqBxE,yBAA+B,OAAO,EAAE,eAAe,iBAiFtD"}
+{"version":3,"file":"escrow.d.ts","sourceRoot":"","sources":["../../../src/routes/v1/escrow.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,eAAe,EAAgC,MAAM,SAAS,CAAC;AAqBxE,yBAA+B,OAAO,EAAE,eAAe,iBAgHtD"}

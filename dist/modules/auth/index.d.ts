@@ -1,11 +1,19 @@
-export interface SilentVerifyRequest {
-    token: string;
-    ipAddress?: string;
-    ownerId: string;
+export interface InitSilentVerifyRequest {
+    phoneNumber: string;
+    redirectUri: string;
 }
-export interface SilentVerifyResult {
+export interface InitSilentVerifyResult {
+    authorizationUrl: string;
+    state: string;
+}
+export interface VerifySilentVerifyRequest {
+    phoneNumber: string;
+    code: string;
+    state: string;
+}
+export interface VerifySilentVerifyResult {
     success: boolean;
-    phoneNumber?: string;
+    verified: boolean;
     error?: string;
 }
 export interface DeviceBindRequest {
@@ -18,9 +26,14 @@ export interface DeviceBindResult {
     bindingId: string;
 }
 /**
- * Perform Silent Authentication using CAMARA Number Verification.
+ * Initialize Silent Authentication using CAMARA Number Verification.
+ * Returns the authorization URL to redirect the user's cellular device to.
  */
-export declare function silentVerify(request: SilentVerifyRequest): Promise<SilentVerifyResult>;
+export declare function initSilentVerify(request: InitSilentVerifyRequest): Promise<InitSilentVerifyResult>;
+/**
+ * Complete Silent Authentication using the access code and state.
+ */
+export declare function silentVerify(request: VerifySilentVerifyRequest): Promise<VerifySilentVerifyResult>;
 /**
  * Securely bind a device ID to a phone number.
  * [CVE-5 FIX] Stores phone_number_hash instead of raw phone number.

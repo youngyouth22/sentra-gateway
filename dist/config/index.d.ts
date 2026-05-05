@@ -1,6 +1,7 @@
 export declare const config: {
     port: number;
     nodeEnv: "development" | "test" | "production";
+    apiUrl: string;
     apiKey: string;
     nokiaToken: string;
     nokiaEnv: string;

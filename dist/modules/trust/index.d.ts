@@ -2,6 +2,8 @@ export interface TrustSignals {
     simSwap: boolean;
     deviceChanged: boolean;
     roaming: boolean;
+    callForwarding: boolean;
+    unreachable: boolean;
 }
 export interface TrustResult {
     trustScore: number;

@@ -32,6 +32,21 @@ export default async function (fastify) {
                 },
                 required: ["phoneNumber"],
             },
+            response: {
+                200: {
+                    description: "Risk assessment result",
+                    type: "object",
+                    properties: {
+                        riskScore: { type: "number" },
+                        authorized: { type: "boolean" },
+                        reasons: { type: "array", items: { type: "string" } }
+                    }
+                },
+                400: { $ref: "ErrorResponse#" },
+                401: { $ref: "ErrorResponse#" },
+                403: { $ref: "ErrorResponse#" },
+                500: { $ref: "ErrorResponse#" }
+            }
         },
     }, async function (request, reply) {
         const body = preAuthSchema.parse(request.body);
@@ -53,6 +68,21 @@ export default async function (fastify) {
                 },
                 required: ["phoneNumber", "latitude", "longitude"],
             },
+            response: {
+                200: {
+                    description: "Geofence check result",
+                    type: "object",
+                    properties: {
+                        withinArea: { type: "boolean" },
+                        distanceFromCenter: { type: "number" },
+                        error: { type: "string", nullable: true }
+                    }
+                },
+                400: { $ref: "ErrorResponse#" },
+                401: { $ref: "ErrorResponse#" },
+                403: { $ref: "ErrorResponse#" },
+                500: { $ref: "ErrorResponse#" }
+            }
         },
     }, async function (request, reply) {
         const body = geofenceSchema.parse(request.body);

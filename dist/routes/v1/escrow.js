@@ -39,6 +39,21 @@ export default async function (fastify) {
                 },
                 required: ["senderPhone", "receiverPhone", "amount"],
             },
+            response: {
+                201: {
+                    description: "Escrow created successfully",
+                    type: "object",
+                    properties: {
+                        escrowId: { type: "string" },
+                        status: { type: "string", enum: ["CREATED", "FAILED"] },
+                        amount: { type: "number" }
+                    }
+                },
+                400: { $ref: "ErrorResponse#" },
+                401: { $ref: "ErrorResponse#" },
+                403: { $ref: "ErrorResponse#" },
+                500: { $ref: "ErrorResponse#" }
+            }
         },
     }, async function (request, reply) {
         const body = createSchema.parse(request.body);
@@ -68,6 +83,22 @@ export default async function (fastify) {
                 },
                 required: ["escrowId"],
             },
+            response: {
+                200: {
+                    description: "Escrow released successfully",
+                    type: "object",
+                    properties: {
+                        success: { type: "boolean" },
+                        transactionId: { type: "string" },
+                        status: { type: "string" }
+                    }
+                },
+                400: { $ref: "ErrorResponse#" },
+                401: { $ref: "ErrorResponse#" },
+                403: { $ref: "ErrorResponse#" },
+                404: { $ref: "ErrorResponse#" },
+                500: { $ref: "ErrorResponse#" }
+            }
         },
     }, async function (request, reply) {
         const { escrowId } = releaseSchema.parse(request.body);
