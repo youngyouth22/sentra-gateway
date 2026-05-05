@@ -179,20 +179,18 @@ export default async function (fastify: FastifyInstance, opts: FastifyPluginOpti
     },
   });
 
-  // [VH-2 FIX] Only register Swagger UI in non-production environments
-  if (!config.isProduction) {
-    await fastify.register(swaggerUi, {
-      routePrefix: "/docs",
-      uiConfig: {
-        docExpansion: "list",
-        deepLinking: false,
-        // Disable "Try it out" in development to prevent accidental calls
-        supportedSubmitMethods: ["get"],
-      },
-      staticCSP: true,
-    });
-    fastify.log.info("Swagger UI enabled at /docs (non-production only)");
-  }
+  // [VH-2 FIX] Register Swagger UI unconditionally for ReDoc Dashboard
+  await fastify.register(swaggerUi, {
+    routePrefix: "/docs",
+    uiConfig: {
+      docExpansion: "list",
+      deepLinking: false,
+      // Disable "Try it out" in development to prevent accidental calls
+      supportedSubmitMethods: ["get"],
+    },
+    staticCSP: true,
+  });
+  fastify.log.info("Swagger UI enabled at /docs");
 
   // ── Usage Tracker ─────────────────────────────────────────────────────────
   const { usageTracker } = await import("./middleware/usageTracker.js");
