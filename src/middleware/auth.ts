@@ -24,7 +24,11 @@ export async function verifySupabaseToken(
   const authHeader = request.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    throw new AppError("Missing or invalid Bearer token", 401, ErrorCodes.UNAUTHORIZED);
+    throw new AppError(
+      "Missing or invalid Bearer token",
+      401,
+      ErrorCodes.UNAUTHORIZED,
+    );
   }
 
   // [SECURITY] Validate token length to prevent memory exhaustion
@@ -65,11 +69,19 @@ export async function verifySentraApiKey(
   const apiKey = request.headers["x-api-key"] as string | undefined;
 
   if (!apiKey) {
-    throw new AppError("Missing x-api-key header", 401, ErrorCodes.UNAUTHORIZED);
+    throw new AppError(
+      "Missing x-api-key header",
+      401,
+      ErrorCodes.UNAUTHORIZED,
+    );
   }
 
   // [SECURITY] Validate key format and length before hitting the database
-  if (typeof apiKey !== "string" || apiKey.length > 256 || !apiKey.startsWith("sentra_")) {
+  if (
+    typeof apiKey !== "string" ||
+    apiKey.length > 256 ||
+    !apiKey.startsWith("sentra_")
+  ) {
     throw new AppError("Invalid API key format", 401, ErrorCodes.UNAUTHORIZED);
   }
 
@@ -77,7 +89,11 @@ export async function verifySentraApiKey(
 
   if (!keyData) {
     // [SECURITY] Use constant-time-like response — don't leak timing info
-    throw new AppError("Invalid or revoked API key", 401, ErrorCodes.UNAUTHORIZED);
+    throw new AppError(
+      "Invalid or revoked API key",
+      401,
+      ErrorCodes.UNAUTHORIZED,
+    );
   }
 
   request.apiKeyId = keyData.id;
