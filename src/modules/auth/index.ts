@@ -75,11 +75,12 @@ export async function silentVerify(request: VerifySilentVerifyRequest): Promise<
       success: true,
       verified: isVerified,
     };
-  } catch (error) {
+  } catch (error: any) {
+    console.error("Nokia Number Verification Error:", error.message || error);
     return {
       success: false,
       verified: false,
-      error: "Number verification failed. Code may be invalid or expired.",
+      error: `Number verification failed: ${error.message || "Unknown error"}`,
     };
   }
 }
