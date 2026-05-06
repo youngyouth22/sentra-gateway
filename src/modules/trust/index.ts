@@ -74,7 +74,6 @@ export async function evaluateTrust(phoneNumber: string, userId: string): Promis
     if (signals.simSwap)
       signalsToInsert.push({
         identity_id: identity.id,
-        // [VM-5 FIX] signal_type now uses controlled values, not free-form strings
         signal_type: "sim_swap" as const,
         severity_level: 5,
       });
@@ -94,45 +93,72 @@ export async function evaluateTrust(phoneNumber: string, userId: string): Promis
       signalsToInsert.push({
         identity_id: identity.id,
         signal_type: "call_forwarding" as const,
-        severity_level: 5, // High risk - indicates potential OTP interception
+        severity_level: 5,
       });
     if (signals.unreachable)
       signalsToInsert.push({
         identity_id: identity.id,
         signal_type: "unreachable_device" as const,
-        severity_level: 4, // High risk - indicates potential bot or virtual number
+        severity_level: 4,
       });
 
     await supabase.from("identity_signals").insert(signalsToInsert);
-
-    // Refresh identity after trigger updates global score
+    
+    // Refresh identity to get the latest global score if updated by triggers
     const { data: updatedIdentity } = await supabase
       .from("identities")
       .select("*")
       .eq("id", identity.id)
       .single();
-    identity = updatedIdentity;
+    if (updatedIdentity) identity = updatedIdentity;
   }
 
-  // 4. Compute final trust score from collective intelligence
-  const finalScore = identity.global_trust_score ?? 100;
-
+  // 4. [SOTA SCORING ENGINE] Real-time Weighted Risk Calculation
+  // We don't just trust the DB score (which might be stale/async), we calculate real-time impact
+  let baseScore = identity.global_trust_score ?? 100;
+  let realTimeDeduction = 0;
   const reasons: string[] = [];
-  if (signals.simSwap) reasons.push("SIM card was recently swapped");
-  if (signals.deviceChanged) reasons.push("Device has changed");
-  if (signals.roaming) reasons.push("Device is roaming");
-  if (signals.callForwarding) reasons.push("Call forwarding is active (Potential OTP interception)");
-  if (signals.unreachable) reasons.push("Device is unreachable or offline (Potential virtual number/bot)");
-  if (finalScore < 50 && reasons.length === 0)
-    reasons.push("Negative reputation in the Sentra Nexus network");
+
+  if (signals.simSwap) {
+    realTimeDeduction += 65;
+    reasons.push("SIM card was recently swapped (High Risk)");
+  }
+  if (signals.callForwarding) {
+    realTimeDeduction += 55;
+    reasons.push("Unconditional call forwarding active (OTP Interception Risk)");
+  }
+  if (signals.unreachable) {
+    realTimeDeduction += 30;
+    reasons.push("Device is unreachable (Potential bot or virtual number)");
+  }
+  if (signals.deviceChanged) {
+    realTimeDeduction += 20;
+    reasons.push("Device hardware change detected");
+  }
+  if (signals.roaming) {
+    realTimeDeduction += 15;
+    reasons.push("International roaming active");
+  }
+
+  // Synergistic Penalty: If multiple critical signals are present, increase deduction
+  if (signals.simSwap && (signals.callForwarding || signals.deviceChanged)) {
+    realTimeDeduction += 20; // Critical synergy
+    reasons.push("Synergistic fraud patterns detected");
+  }
+
+  // Calculate final score (clamped between 0 and 100)
+  // We take the minimum of the reputation score and the real-time signal score
+  const signalScore = Math.max(0, 100 - realTimeDeduction);
+  const finalScore = Math.min(baseScore, signalScore);
 
   let riskLevel: "low" | "medium" | "high";
   let decision: "ALLOW" | "STEP_UP_AUTH" | "BLOCK";
 
-  if (finalScore > 85) {
+  // Decision Logic based on SOTA FinTech thresholds
+  if (finalScore >= 80) {
     riskLevel = "low";
     decision = "ALLOW";
-  } else if (finalScore >= 40) {
+  } else if (finalScore >= 45) {
     riskLevel = "medium";
     decision = "STEP_UP_AUTH";
   } else {
@@ -140,10 +166,10 @@ export async function evaluateTrust(phoneNumber: string, userId: string): Promis
     decision = "BLOCK";
   }
 
-  // [VH-7 FIX] Webhook payload does NOT include raw phone number
-  if (finalScore < 40) {
+  // [VH-7 FIX] Webhook alert for high-risk transactions
+  if (decision === "BLOCK" || finalScore < 40) {
     triggerTrustAlert(userId, {
-      phoneHash, // Use hash, not raw phone number
+      phoneHash,
       trustScore: finalScore,
       signals,
       reasons,
@@ -151,7 +177,7 @@ export async function evaluateTrust(phoneNumber: string, userId: string): Promis
   }
 
   return {
-    trustScore: finalScore,
+    trustScore: Math.round(finalScore),
     globalNexusScore: identity.global_trust_score,
     riskLevel,
     decision,
