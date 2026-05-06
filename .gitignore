@@ -3,6 +3,9 @@
 .env.local
 .env.*.local
 
+# Agent configurations
+.agents/
+
 # Logs
 logs
 *.log
