@@ -1,1 +1,0 @@
-{"version":3,"file":"sensible.js","sourceRoot":"","sources":["../../src/plugins/sensible.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,MAAM,gBAAgB,CAAC;AAChC,OAAO,QAAQ,MAAM,mBAAmB,CAAC;AAEzC;;;;GAIG;AACH,eAAe,EAAE,CAAC,KAAK,WAAW,OAAY,EAAE,IAAS;IACvD,OAAO,CAAC,QAAQ,CAAC,QAAQ,EAAE;QACzB,YAAY,EAAE,KAAK;KACpB,CAAC,CAAC;AACL,CAAC,CAAC,CAAC"}

@@ -2,9 +2,20 @@
 .env
 .env.local
 .env.*.local
+.env.development
+.env.test
+.env.production
+.env.staging
 
 # Agent configurations
 .agents/
+
+# Build and distribution
+dist/
+build/
+out/
+.next/
+.turbo/
 
 # Logs
 logs
@@ -67,3 +78,23 @@ profile*
 
 # Local tarballs — never commit vendor packages
 *.tgz
+
+# Security and Credentials
+*.pem
+*.key
+*.pub
+*.cert
+*.crt
+*.pfx
+*.p12
+credentials.json
+service-account.json
+
+# Databases
+*.sqlite
+*.db
+*.sql dump
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -1,1 +1,0 @@
-{"version":3,"file":"support.js","sourceRoot":"","sources":["../../src/plugins/support.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,MAAM,gBAAgB,CAAC;AAEhC,mDAAmD;AACnD,8CAA8C;AAE9C,eAAe,EAAE,CAAC,KAAK,WAAW,OAAY,EAAE,IAAS;IACvD,OAAO,CAAC,QAAQ,CAAC,aAAa,EAAE;QAC9B,OAAO,MAAM,CAAC;IAChB,CAAC,CAAC,CAAC;AACL,CAAC,CAAC,CAAC"}
