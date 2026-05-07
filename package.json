@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "description": "This project was bootstrapped with Fastify-CLI.",
-  "main": "app.js",
+  "main": "dist/server.js",
   "directories": {
     "test": "test"
   },

@@ -42,6 +42,41 @@ export default async function (fastify: FastifyInstance, opts: FastifyPluginOpti
     required: ["statusCode", "code", "message", "referenceId"],
   });
 
+  // ── CORS (Must be registered before other middlewares) ───────────────────
+  // [VM-2 FIX] Explicit CORS policy — rejects requests from unauthorized origins
+  await fastify.register(cors, {
+    origin: (origin, cb) => {
+      // In development, allow all origins
+      if (!config.isProduction || !origin) {
+        cb(null, true);
+        return;
+      }
+
+      const allowedOrigins = config.corsOrigin.split(",").map((o) => o.trim().replace(/\/$/, ""));
+      const currentOrigin = origin.replace(/\/$/, "");
+
+      if (allowedOrigins.includes(currentOrigin)) {
+        cb(null, true);
+      } else {
+        fastify.log.warn(`Blocked CORS request from origin: ${origin}`);
+        cb(new Error("Not allowed by CORS"), false);
+      }
+    },
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "x-api-key",
+      "x-idempotency-key",
+      "x-client-info",
+      "apikey",
+      "Accept",
+      "Origin",
+    ],
+    credentials: true,
+    maxAge: 86400, // 24h preflight cache
+  });
+
   // ── Security Headers (Helmet) ─────────────────────────────────────────────
   // [VH-1] Fixed: removed 'unsafe-inline' from scriptSrc
   await fastify.register(helmet, {
@@ -67,18 +102,6 @@ export default async function (fastify: FastifyInstance, opts: FastifyPluginOpti
     hsts: config.isProduction
       ? { maxAge: 31536000, includeSubDomains: true, preload: true }
       : false,
-  });
-
-  // ── CORS ──────────────────────────────────────────────────────────────────
-  // [VM-2 FIX] Explicit CORS policy — rejects requests from unauthorized origins
-  await fastify.register(cors, {
-    origin: config.isProduction
-      ? config.corsOrigin.split(",").map((o) => o.trim())
-      : true, // In dev, allow all origins for convenience
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "x-api-key", "x-idempotency-key"],
-    credentials: true,
-    maxAge: 86400, // 24h preflight cache
   });
 
   // ── Global Rate Limit (baseline) ─────────────────────────────────────────
