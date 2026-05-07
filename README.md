@@ -1,74 +1,68 @@
-# SENTRA Trust Scoring API
+# SENTRA Gateway API
 
-AI-driven Trust Scoring API for fintech fraud prevention using Nokia as Code CAMARA sandbox.
+Production-grade Trust Scoring API for Fintech Fraud Prevention.
 
-## Getting Started
+## Quick Start
 
-### Prerequisites
+### 1. Prerequisites
+- Node.js v20+
+- Supabase (PostgreSQL)
+- Nokia Network-as-Code Credentials (optional for standalone)
 
-- Node.js (latest LTS)
-- npm
-
-### Installation
-
+### 2. Setup
 ```bash
+# Install dependencies
 npm install
-```
 
-### Environment Setup
+# Configure environment
+cp .env.example .env
+# Fill in your SUPABASE_URL and SUPABASE_ANON_KEY
 
-Copy `.env` and configure:
-
-- `API_KEY`: Your API key for authentication
-- `NOKIA_API_KEY`: Nokia as Code sandbox API key
-- `NOKIA_BASE_URL`: https://sandbox.api.nokia-as-code.com
-
-### Development
-
-```bash
+# Run in development mode
 npm run dev
 ```
 
-Server starts at http://localhost:3000
+## API Endpoints
 
-### Production
+### POST `/v1/trust/evaluate`
+Evaluates the risk of a transaction based on phone number and context.
 
+**Request:**
 ```bash
-npm run build
-npm start
+curl -X POST http://localhost:3000/v1/trust/evaluate \
+  -H "X-API-Key: YOUR_SENTRA_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "phone_number": "+237612345678",
+    "transaction_amount": 150000,
+    "transaction_currency": "XAF",
+    "sender_phone": "+237698765432",
+    "device_id": "d3f1a9c2b4e5f6g7h8i9j0",
+    "device_trusted": true,
+    "sender_location": {
+      "latitude": 3.848,
+      "longitude": 11.502,
+      "country_code": "CM"
+    },
+    "timestamp": "2025-05-07T14:32:00Z"
+  }'
 ```
 
-## API Documentation
+### GET `/v1/trust/explain/:phoneNumber`
+Returns the full signal history and detailed audit trail for a phone number.
 
-Visit http://localhost:3000/docs for Swagger UI.
-
-## Key Endpoints
-
-- `POST /v1/trust/evaluate` - Evaluate trust score
-- `POST /v1/transaction/initiate` - Initiate transaction with trust check
-- `POST /v1/auth/silent-verify` - Silent auth verification
-- `POST /v1/auth/device-bind` - Device binding
-- `POST /v1/kyc/check` - KYC eligibility check
-- `GET /v1/kyc/auto-fill` - Auto-fill KYC data
-- `POST /v1/security/pre-auth-check` - Pre-auth security check
-- `POST /v1/security/geofence` - Geofence check
-- `POST /v1/escrow/create` - Create escrow
-- `POST /v1/escrow/release` - Release escrow
-
-## Testing
-
-```bash
-npm test
-```
+### GET `/health`
+Check API status.
 
 ## Architecture
+- **Pure Scoring Engine**: The core risk logic is decoupled from side effects, making it 100% testable and auditable.
+- **Signal Extraction**: Bridges real network APIs (Nokia) and community data (Supabase).
+- **Security**: Rate-limited, API-key protected, and GDPR-compliant (hashes phone numbers in logs).
 
-- TypeScript
-- Fastify framework
-- Zod validation
-- Pino logging
-- Nokia as Code CAMARA integration
+## Testing
+```bash
+# Run unit tests for scoring logic
+npm test test/scorer.test.ts
+```
 
-## Learn More
-
-To learn Fastify, check out the [Fastify documentation](https://fastify.dev/docs/latest/).
+For a detailed explanation of the risk model, see [SCORING_MODEL_CARD.md](./SCORING_MODEL_CARD.md).

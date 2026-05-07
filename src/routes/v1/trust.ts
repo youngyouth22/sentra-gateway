@@ -1,16 +1,11 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { evaluateTrust, reportFraud } from "../../modules/trust/index.js";
+import { evaluateTrust, reportFraud, hashPhone } from "../../modules/trust/index.js";
 import { verifySentraApiKey } from "../../middleware/auth.js";
+import { EvaluateRequestSchema, EvaluateRequest } from "../../modules/trust/types.js";
+import { supabase } from "../../plugins/supabase.js";
 
-// [VM-1 FIX] fraudType is now a proper Zod enum — previously z.string() allowed arbitrary values
 const FRAUD_TYPES = ["account_takeover", "scam", "payment_fraud", "identity_theft"] as const;
-
-const evaluateSchema = z.object({
-  phoneNumber: z
-    .string()
-    .regex(/^\+[1-9]\d{1,14}$/, "Phone number must be in E.164 format (e.g. +33612345678)"),
-});
 
 const reportFraudSchema = z.object({
   phoneNumber: z.string().regex(/^\+[1-9]\d{1,14}$/),
@@ -37,7 +32,7 @@ export default async function (fastify: FastifyInstance) {
     {
       config: {
         rateLimit: {
-          max: 10,
+          max: 100, // Increased as requested
           timeWindow: "1 minute",
         },
       },
@@ -47,43 +42,89 @@ export default async function (fastify: FastifyInstance) {
         security: [{ apiKey: [] }],
         body: {
           type: "object",
+          required: ["phone_number", "transaction_amount", "transaction_currency", "sender_phone", "timestamp"],
           properties: {
-            phoneNumber: {
-              type: "string",
-              pattern: "^\\+[1-9]\\d{1,14}$",
-              description: "E.164 format phone number (e.g. +33612345678)",
+            phone_number: { type: "string", pattern: "^\\+[1-9]\\d{1,14}$" },
+            transaction_amount: { type: "number" },
+            transaction_currency: { type: "string", minLength: 3, maxLength: 3 },
+            sender_phone: { type: "string", pattern: "^\\+[1-9]\\d{1,14}$" },
+            device_id: { type: "string" },
+            device_trusted: { type: "boolean" },
+            sender_location: {
+              type: "object",
+              properties: {
+                latitude: { type: "number" },
+                longitude: { type: "number" },
+                country_code: { type: "string" }
+              }
             },
-          },
-          required: ["phoneNumber"],
+            timestamp: { type: "string", format: "date-time" }
+          }
         },
         response: {
           200: {
             description: "Trust evaluation result",
             type: "object",
             properties: {
-              trustScore: { type: "number" },
-              riskLevel: { type: "string", enum: ["low", "medium", "high"] },
-              decision: { type: "string", enum: ["ALLOW", "STEP_UP_AUTH", "BLOCK"] },
-              signals: { type: "object", additionalProperties: true },
-              reasons: { type: "array", items: { type: "string" } }
+              phone_number: { type: "string" },
+              risk_score: { type: "number" },
+              risk_level: { type: "string" },
+              decision: { type: "string" },
+              confidence: { type: "number" },
+              signals: { type: "object" },
+              recommended_action: { type: "string" },
+              explanation: { type: "string" },
+              evaluated_at: { type: "string" },
+              processing_time_ms: { type: "number" }
             }
-          },
-          400: { $ref: "ErrorResponse#" },
-          401: { $ref: "ErrorResponse#" },
-          403: { $ref: "ErrorResponse#" },
-          429: { $ref: "ErrorResponse#" },
-          500: { $ref: "ErrorResponse#" },
+          }
         }
       },
     },
-    async function (request: FastifyRequest<{ Body: EvaluateBody }>, reply: FastifyReply) {
-      const { phoneNumber } = evaluateSchema.parse(request.body);
-      // [VH-7 FIX] Do NOT log the raw phone number — log a masked version
-      const maskedPhone = phoneNumber.slice(0, 4) + "****" + phoneNumber.slice(-2);
-      request.log.info({ phoneNumber: maskedPhone }, "Evaluating trust score");
-      const result = await evaluateTrust(phoneNumber, request.sentraUser.uid);
+    async function (request: FastifyRequest<{ Body: EvaluateRequest }>, reply: FastifyReply) {
+      const body = EvaluateRequestSchema.parse(request.body);
+      
+      // [SECURITY] Hash phone number in logs
+      const maskedPhone = hashPhone(body.phone_number).slice(0, 12) + "...";
+      request.log.info({ phoneHash: maskedPhone }, "Evaluating trust score");
+      
+      const result = await evaluateTrust(body, request.sentraUser.uid);
       return result;
     },
+  );
+
+  fastify.get(
+    "/trust/explain/:phoneNumber",
+    {
+      schema: {
+        description: "Get full signal breakdown for a phone number (Compliance & Risk teams)",
+        tags: ["Trust"],
+        security: [{ apiKey: [] }],
+        params: {
+          type: "object",
+          properties: {
+            phoneNumber: { type: "string", pattern: "^\\+[1-9]\\d{1,14}$" }
+          }
+        }
+      }
+    },
+    async function (request: FastifyRequest<{ Params: { phoneNumber: string } }>, reply: FastifyReply) {
+      const { phoneNumber } = request.params;
+      const phoneHash = hashPhone(phoneNumber);
+
+      const { data: evaluations } = await supabase
+        .from("trust_evaluations")
+        .select("*")
+        .eq("phone_hash", phoneHash)
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      if (!evaluations || evaluations.length === 0) {
+        return reply.status(404).send({ error: "Not Found", message: "No evaluation history found for this number" });
+      }
+
+      return evaluations[0];
+    }
   );
 
   fastify.post(

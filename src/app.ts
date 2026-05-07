@@ -75,7 +75,7 @@ export default async function (fastify: FastifyInstance, opts: FastifyPluginOpti
     origin: config.isProduction
       ? config.corsOrigin.split(",").map((o) => o.trim())
       : true, // In dev, allow all origins for convenience
-    methods: ["GET", "POST", "DELETE", "OPTIONS"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "x-api-key", "x-idempotency-key"],
     credentials: true,
     maxAge: 86400, // 24h preflight cache

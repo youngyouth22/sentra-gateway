@@ -228,3 +228,17 @@ CREATE TABLE IF NOT EXISTS idempotency_keys (
 );
 
 CREATE INDEX IF NOT EXISTS idx_idempotency_lookup ON idempotency_keys(user_id, idempotency_key);
+
+-- ── Trust Evaluations Audit Trail ───────────────────────────────────
+-- Persists every trust evaluation for fintech compliance teams.
+CREATE TABLE IF NOT EXISTS trust_evaluations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    phone_hash TEXT NOT NULL,
+    risk_score INT NOT NULL,
+    decision TEXT NOT NULL,
+    context JSONB NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_trust_eval_phone_hash ON trust_evaluations(phone_hash);
+CREATE INDEX IF NOT EXISTS idx_trust_eval_created_at ON trust_evaluations(created_at DESC);

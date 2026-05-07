@@ -27,7 +27,7 @@ const envSchema = z.object({
   SUPABASE_URL: z.string().url("SUPABASE_URL must be a valid URL"),
   SUPABASE_KEY: z.string().min(1, "SUPABASE_KEY is required"),
   // CORS — only explicit origins allowed in production
-  CORS_ORIGIN: z.string().default("http://localhost:3000"),
+  CORS_ORIGIN: z.string().default("http://localhost:3000,http://localhost:5173"),
   // Body size limit in bytes (default 1MB)
   BODY_LIMIT: z.string().default("1048576").transform(Number),
 });

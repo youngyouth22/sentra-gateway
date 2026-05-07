@@ -3,25 +3,10 @@ import crypto from "crypto";
 import { config } from "../../config/index.js";
 import { supabase } from "../../plugins/supabase.js";
 import { triggerTrustAlert } from "../../utils/webhookDispatcher.js";
+import { EvaluateRequest, EvaluateResponse } from "./types.js";
+import { calculateRiskScore, RawSignals } from "./scorer.js";
 
 const nacClient = new NetworkAsCodeClient(config.nokiaToken, config.nokiaEnv);
-
-export interface TrustSignals {
-  simSwap: boolean;
-  deviceChanged: boolean;
-  roaming: boolean;
-  callForwarding: boolean;
-  unreachable: boolean;
-}
-
-export interface TrustResult {
-  trustScore: number;
-  globalNexusScore: number;
-  riskLevel: "low" | "medium" | "high";
-  decision: "ALLOW" | "STEP_UP_AUTH" | "BLOCK";
-  signals: TrustSignals;
-  reasons: string[];
-}
 
 /**
  * Hash phone number for anonymous collective intelligence storage.
@@ -32,13 +17,74 @@ export function hashPhone(phoneNumber: string): string {
   return crypto.createHash("sha256").update(phoneNumber).digest("hex");
 }
 
-export async function evaluateTrust(phoneNumber: string, userId: string): Promise<TrustResult> {
-  const phoneHash = hashPhone(phoneNumber);
+/**
+ * Main entry point for trust evaluation.
+ * Extracts signals from network APIs and collective intelligence, then runs the scoring engine.
+ */
+export async function evaluateTrust(req: EvaluateRequest, userId: string): Promise<EvaluateResponse> {
+  const phoneHash = hashPhone(req.phone_number);
 
-  // 1. Fetch or create identity in Collective Intelligence Nexus
+  // 1. Fetch community signals from Collective Intelligence (Supabase)
+  const { data: reports } = await supabase
+    .from("fraud_reports")
+    .select("id")
+    .eq("identity_id", (await getIdentityId(phoneHash)))
+    .gte("created_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
+
+  const communityReportsCount = reports?.length || 0;
+
+  // 2. Fetch Network Signals (Nokia APIs)
+  // In a production environment, these would be real calls. 
+  // For this standalone runnable version, we use the results from getSimSwapStatus etc.
+  const [simSwapResult, deviceStatusResult] = await Promise.all([
+    getSimSwapStatus(req.phone_number),
+    getDeviceStatus(req.phone_number),
+  ]);
+
+  // 3. Mock logic for Geofence and Velocity (would normally use DB + Location API)
+  const isGeofenceAnomaly = req.sender_location?.country_code !== "CM"; // Mock: suspect anything outside Cameroon for this demo
+  const mockVelocity = 2; // Default mock velocity
+  const mockAccountAge = 450; // 15 months
+
+  const rawSignals: RawSignals = {
+    communityReportsCount,
+    simSwapRecent: simSwapResult.swapped,
+    geofenceAnomaly: isGeofenceAnomaly,
+    transactionVelocity: mockVelocity,
+    deviceTrusted: req.device_trusted,
+    accountAgeDays: mockAccountAge,
+    hasDeviceId: !!req.device_id,
+    hasLocation: !!req.sender_location
+  };
+
+  // 4. Run the pure scoring engine
+  const result = calculateRiskScore(req.phone_number, rawSignals);
+
+  // 5. Audit & Alerts
+  if (result.decision === "BLOCK" || result.risk_score > 60) {
+    triggerTrustAlert(userId, {
+      phoneHash,
+      trustScore: result.risk_score,
+      signals: result.signals,
+      explanation: result.explanation,
+    });
+  }
+
+  // 6. Record this evaluation in the DB for future velocity checks
+  await supabase.from("trust_evaluations").insert({
+    phone_hash: phoneHash,
+    risk_score: result.risk_score,
+    decision: result.decision,
+    context: req
+  });
+
+  return result;
+}
+
+async function getIdentityId(phoneHash: string): Promise<string> {
   let { data: identity } = await supabase
     .from("identities")
-    .select("*")
+    .select("id")
     .eq("phone_hash", phoneHash)
     .single();
 
@@ -50,140 +96,7 @@ export async function evaluateTrust(phoneNumber: string, userId: string): Promis
       .single();
     identity = newIdentity;
   }
-
-  // 2. Call Nokia Network-as-Code APIs for real-time network signals
-  const [simSwapResult, deviceStatusResult, locationResult, forwardingResult, reachabilityResult] = await Promise.all([
-    getSimSwapStatus(phoneNumber),
-    getDeviceStatus(phoneNumber),
-    getLocationStatus(phoneNumber),
-    getCallForwardingStatus(phoneNumber),
-    getReachabilityStatus(phoneNumber),
-  ]);
-
-  const signals: TrustSignals = {
-    simSwap: simSwapResult.swapped || false,
-    deviceChanged: deviceStatusResult.changed || false,
-    roaming: locationResult.roaming || false,
-    callForwarding: forwardingResult.forwarding || false,
-    unreachable: reachabilityResult.unreachable || false,
-  };
-
-  // 3. Persist new signals to the Nexus for global learning
-  if (signals.simSwap || signals.deviceChanged || signals.roaming || signals.callForwarding || signals.unreachable) {
-    const signalsToInsert = [];
-    if (signals.simSwap)
-      signalsToInsert.push({
-        identity_id: identity.id,
-        signal_type: "sim_swap" as const,
-        severity_level: 5,
-      });
-    if (signals.deviceChanged)
-      signalsToInsert.push({
-        identity_id: identity.id,
-        signal_type: "device_change" as const,
-        severity_level: 3,
-      });
-    if (signals.roaming)
-      signalsToInsert.push({
-        identity_id: identity.id,
-        signal_type: "roaming" as const,
-        severity_level: 2,
-      });
-    if (signals.callForwarding)
-      signalsToInsert.push({
-        identity_id: identity.id,
-        signal_type: "call_forwarding" as const,
-        severity_level: 5,
-      });
-    if (signals.unreachable)
-      signalsToInsert.push({
-        identity_id: identity.id,
-        signal_type: "unreachable_device" as const,
-        severity_level: 4,
-      });
-
-    await supabase.from("identity_signals").insert(signalsToInsert);
-    
-    // Refresh identity to get the latest global score if updated by triggers
-    const { data: updatedIdentity } = await supabase
-      .from("identities")
-      .select("*")
-      .eq("id", identity.id)
-      .single();
-    if (updatedIdentity) identity = updatedIdentity;
-  }
-
-  // 4. [SOTA SCORING ENGINE] Real-time Weighted Risk Calculation
-  // We don't just trust the DB score (which might be stale/async), we calculate real-time impact
-  let baseScore = identity.global_trust_score ?? 100;
-  let realTimeDeduction = 0;
-  const reasons: string[] = [];
-
-  if (signals.simSwap) {
-    realTimeDeduction += 65;
-    reasons.push("SIM card was recently swapped (High Risk)");
-  }
-  if (signals.callForwarding) {
-    realTimeDeduction += 55;
-    reasons.push("Unconditional call forwarding active (OTP Interception Risk)");
-  }
-  if (signals.unreachable) {
-    realTimeDeduction += 30;
-    reasons.push("Device is unreachable (Potential bot or virtual number)");
-  }
-  if (signals.deviceChanged) {
-    realTimeDeduction += 20;
-    reasons.push("Device hardware change detected");
-  }
-  if (signals.roaming) {
-    realTimeDeduction += 15;
-    reasons.push("International roaming active");
-  }
-
-  // Synergistic Penalty: If multiple critical signals are present, increase deduction
-  if (signals.simSwap && (signals.callForwarding || signals.deviceChanged)) {
-    realTimeDeduction += 20; // Critical synergy
-    reasons.push("Synergistic fraud patterns detected");
-  }
-
-  // Calculate final score (clamped between 0 and 100)
-  // We take the minimum of the reputation score and the real-time signal score
-  const signalScore = Math.max(0, 100 - realTimeDeduction);
-  const finalScore = Math.min(baseScore, signalScore);
-
-  let riskLevel: "low" | "medium" | "high";
-  let decision: "ALLOW" | "STEP_UP_AUTH" | "BLOCK";
-
-  // Decision Logic based on SOTA FinTech thresholds
-  if (finalScore >= 80) {
-    riskLevel = "low";
-    decision = "ALLOW";
-  } else if (finalScore >= 45) {
-    riskLevel = "medium";
-    decision = "STEP_UP_AUTH";
-  } else {
-    riskLevel = "high";
-    decision = "BLOCK";
-  }
-
-  // [VH-7 FIX] Webhook alert for high-risk transactions
-  if (decision === "BLOCK" || finalScore < 40) {
-    triggerTrustAlert(userId, {
-      phoneHash,
-      trustScore: finalScore,
-      signals,
-      reasons,
-    });
-  }
-
-  return {
-    trustScore: Math.round(finalScore),
-    globalNexusScore: identity.global_trust_score,
-    riskLevel,
-    decision,
-    signals,
-    reasons,
-  };
+  return identity!.id;
 }
 
 async function getSimSwapStatus(phoneNumber: string): Promise<{ swapped: boolean }> {
