@@ -43,11 +43,10 @@ export default async function (fastify: FastifyInstance, opts: FastifyPluginOpti
   });
 
   // ── CORS (Must be registered before other middlewares) ───────────────────
-  // [VM-2 FIX] Explicit CORS policy — rejects requests from unauthorized origins
   await fastify.register(cors, {
     origin: (origin, cb) => {
-      // In development, allow all origins
-      if (!config.isProduction || !origin) {
+      // Allow if no origin (like mobile apps or curl) or if not in production
+      if (!origin || !config.isProduction) {
         cb(null, true);
         return;
       }
@@ -55,11 +54,12 @@ export default async function (fastify: FastifyInstance, opts: FastifyPluginOpti
       const allowedOrigins = config.corsOrigin.split(",").map((o) => o.trim().replace(/\/$/, ""));
       const currentOrigin = origin.replace(/\/$/, "");
 
-      if (allowedOrigins.includes(currentOrigin)) {
+      if (allowedOrigins.includes(currentOrigin) || config.corsOrigin === "*") {
         cb(null, true);
       } else {
-        fastify.log.warn(`Blocked CORS request from origin: ${origin}`);
-        cb(new Error("Not allowed by CORS"), false);
+        // Log the mismatch to help debugging in Render logs
+        fastify.log.warn(`CORS Mismatch: ${currentOrigin} is not in [${allowedOrigins.join(", ")}]`);
+        cb(null, false); 
       }
     },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],

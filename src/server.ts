@@ -47,6 +47,8 @@ for (const signal of signals) {
 const start = async () => {
   try {
     await server.listen({ port: config.port, host: "0.0.0.0" });
+    server.log.info(`🚀 SENTRA Gateway running on ${config.apiUrl}`);
+    server.log.info(`🔒 Allowed CORS Origins: ${config.corsOrigin}`);
     if (!config.isProduction) {
       console.log(`Server listening on http://localhost:${config.port}`);
     }
