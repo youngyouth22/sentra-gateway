@@ -56,11 +56,14 @@ export default fp(async function (fastify: FastifyInstance, opts: FastifyPluginO
       const whitelist = config.corsOrigin.split(",").map((o) => o.trim().replace(/\/$/, ""));
       const normalizedOrigin = origin.replace(/\/$/, "");
 
-      // 3. Strict Check with Debugging
+      // 3. Smart Check (Whitelist + Sentra Dashboards on Vercel)
+      const isSentraDashboard = normalizedOrigin.endsWith(".vercel.app") && 
+                                normalizedOrigin.includes("sentra-dashboard");
+
       const isAllowed = whitelist.includes(normalizedOrigin) || 
+                        isSentraDashboard ||
                         whitelist.some(pattern => {
                           if (pattern === "*") return true;
-                          // Allow subdomains if configured as .domain.com
                           if (pattern.startsWith(".")) {
                             return normalizedOrigin.endsWith(pattern) || normalizedOrigin === pattern.substring(1);
                           }
@@ -71,7 +74,7 @@ export default fp(async function (fastify: FastifyInstance, opts: FastifyPluginO
         cb(null, true);
       } else {
         fastify.log.warn({ origin, whitelist }, "CORS rejection");
-        cb(null, false); // Return false instead of error to avoid 500
+        cb(null, false);
       }
     },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -91,10 +94,12 @@ export default fp(async function (fastify: FastifyInstance, opts: FastifyPluginO
     hideOptionsRoute: false,
   });
 
-  // [SENIOR] Add a global hook to inject CORS debug info (only in non-prod or for dev tracking)
+  // [SENIOR] Add global hooks to inject CORS debug info
   fastify.addHook("onSend", async (request, reply) => {
     if (request.headers.origin) {
       reply.header("X-Sentra-Origin-Check", "processed");
+      // This will let us see exactly what the server thinks is the whitelist
+      reply.header("X-Sentra-Allowed-Config", config.corsOrigin);
     }
   });
 
