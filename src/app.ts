@@ -7,6 +7,7 @@ import helmet from "@fastify/helmet";
 import cors from "@fastify/cors";
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
+import fp from "fastify-plugin";
 import { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { config } from "./config/index.js";
 
@@ -15,11 +16,11 @@ const __dirname = path.dirname(__filename);
 
 const options = {};
 
-export default async function (fastify: FastifyInstance, opts: FastifyPluginOptions) {
+export default fp(async function (fastify: FastifyInstance, opts: FastifyPluginOptions) {
   // Set custom error handler
   fastify.setErrorHandler(errorHandler);
 
-  // Add global schema for standard error responses so AJV can resolve $ref: "ErrorResponse#"
+  // Add global schema for standard error responses
   fastify.addSchema({
     $id: "ErrorResponse",
     type: "object",
@@ -42,24 +43,25 @@ export default async function (fastify: FastifyInstance, opts: FastifyPluginOpti
     required: ["statusCode", "code", "message", "referenceId"],
   });
 
-  // ── CORS (Must be registered before other middlewares) ───────────────────
+  // ── CORS (Strict Production Policy) ───────────────────────────────────────
   await fastify.register(cors, {
     origin: (origin, cb) => {
-      // Allow if no origin (like mobile apps or curl) or if not in production
-      if (!origin || !config.isProduction) {
+      // 1. Allow non-browser requests (curl, mobile apps)
+      if (!origin) {
         cb(null, true);
         return;
       }
 
-      const allowedOrigins = config.corsOrigin.split(",").map((o) => o.trim().replace(/\/$/, ""));
-      const currentOrigin = origin.replace(/\/$/, "");
+      // 2. Build whitelist from config
+      const whitelist = config.corsOrigin.split(",").map((o) => o.trim().replace(/\/$/, ""));
+      const normalizedOrigin = origin.replace(/\/$/, "");
 
-      if (allowedOrigins.includes(currentOrigin) || config.corsOrigin === "*") {
+      // 3. Strict Check
+      if (whitelist.includes(normalizedOrigin) || !config.isProduction) {
         cb(null, true);
       } else {
-        // Log the mismatch to help debugging in Render logs
-        fastify.log.warn(`CORS Mismatch: ${currentOrigin} is not in [${allowedOrigins.join(", ")}]`);
-        cb(null, false); 
+        fastify.log.warn({ origin }, "CORS blocked unauthorized origin");
+        cb(new Error("CORS Policy: Origin not allowed"), false);
       }
     },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -68,37 +70,32 @@ export default async function (fastify: FastifyInstance, opts: FastifyPluginOpti
       "Authorization",
       "x-api-key",
       "x-idempotency-key",
-      "x-client-info",
-      "apikey",
+      "x-client-info", // Supabase
+      "apikey",        // Supabase
       "Accept",
-      "Origin",
+      "Origin"
     ],
     credentials: true,
-    maxAge: 86400, // 24h preflight cache
+    maxAge: 86400, // 24h cache for preflight
+    preflightContinue: false, // CORS plugin handles OPTIONS automatically
   });
 
   // ── Security Headers (Helmet) ─────────────────────────────────────────────
-  // [VH-1] Fixed: removed 'unsafe-inline' from scriptSrc
   await fastify.register(helmet, {
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
         styleSrc: ["'self'"],
         imgSrc: ["'self'", "data:"],
-        // [VH-1 FIX] Removed "https: 'unsafe-inline'" — was allowing XSS
         scriptSrc: ["'self'"],
         frameAncestors: ["'none'"],
         objectSrc: ["'none'"],
         upgradeInsecureRequests: config.isProduction ? [] : null,
       },
     },
-    // Prevent MIME type sniffing
     xContentTypeOptions: true,
-    // Prevent iframe embedding (clickjacking)
     frameguard: { action: "deny" },
-    // Remove X-Powered-By header
     hidePoweredBy: true,
-    // HSTS in production
     hsts: config.isProduction
       ? { maxAge: 31536000, includeSubDomains: true, preload: true }
       : false,
@@ -233,6 +230,6 @@ export default async function (fastify: FastifyInstance, opts: FastifyPluginOpti
     extension: ".ts",
     options: Object.assign({}, opts),
   } as any);
-}
+});
 
 export { options };
