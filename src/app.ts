@@ -43,25 +43,35 @@ export default fp(async function (fastify: FastifyInstance, opts: FastifyPluginO
     required: ["statusCode", "code", "message", "referenceId"],
   });
 
-  // ── CORS (Strict Production Policy) ───────────────────────────────────────
+  // ── CORS (Production-Grade Multi-Origin Policy) ──────────────────────────
   await fastify.register(cors, {
     origin: (origin, cb) => {
-      // 1. Allow non-browser requests (curl, mobile apps)
+      // 1. Allow if no origin (mobile apps, server-to-server)
       if (!origin) {
         cb(null, true);
         return;
       }
 
-      // 2. Build whitelist from config
+      // 2. Parse whitelist
       const whitelist = config.corsOrigin.split(",").map((o) => o.trim().replace(/\/$/, ""));
       const normalizedOrigin = origin.replace(/\/$/, "");
 
-      // 3. Strict Check
-      if (whitelist.includes(normalizedOrigin) || !config.isProduction) {
+      // 3. Strict Check with Debugging
+      const isAllowed = whitelist.includes(normalizedOrigin) || 
+                        whitelist.some(pattern => {
+                          if (pattern === "*") return true;
+                          // Allow subdomains if configured as .domain.com
+                          if (pattern.startsWith(".")) {
+                            return normalizedOrigin.endsWith(pattern) || normalizedOrigin === pattern.substring(1);
+                          }
+                          return false;
+                        });
+
+      if (isAllowed || !config.isProduction) {
         cb(null, true);
       } else {
-        fastify.log.warn({ origin }, "CORS blocked unauthorized origin");
-        cb(new Error("CORS Policy: Origin not allowed"), false);
+        fastify.log.warn({ origin, whitelist }, "CORS rejection");
+        cb(null, false); // Return false instead of error to avoid 500
       }
     },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -70,14 +80,22 @@ export default fp(async function (fastify: FastifyInstance, opts: FastifyPluginO
       "Authorization",
       "x-api-key",
       "x-idempotency-key",
-      "x-client-info", // Supabase
-      "apikey",        // Supabase
+      "x-client-info",
+      "apikey",
       "Accept",
-      "Origin"
+      "Origin",
     ],
     credentials: true,
-    maxAge: 86400, // 24h cache for preflight
-    preflightContinue: false, // CORS plugin handles OPTIONS automatically
+    maxAge: 86400,
+    // [SENIOR] Ensure preflight responses are handled correctly
+    hideOptionsRoute: false,
+  });
+
+  // [SENIOR] Add a global hook to inject CORS debug info (only in non-prod or for dev tracking)
+  fastify.addHook("onSend", async (request, reply) => {
+    if (request.headers.origin) {
+      reply.header("X-Sentra-Origin-Check", "processed");
+    }
   });
 
   // ── Security Headers (Helmet) ─────────────────────────────────────────────

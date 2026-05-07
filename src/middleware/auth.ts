@@ -21,6 +21,9 @@ export async function verifySupabaseToken(
   request: FastifyRequest,
   reply: FastifyReply,
 ) {
+  // [SENIOR FIX] Always allow OPTIONS requests to pass through auth hooks
+  if (request.method === "OPTIONS") return;
+
   const authHeader = request.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -66,6 +69,9 @@ export async function verifySentraApiKey(
   request: FastifyRequest,
   reply: FastifyReply,
 ) {
+  // [SENIOR FIX] Always allow OPTIONS requests to pass through auth hooks
+  if (request.method === "OPTIONS") return;
+
   const apiKey = request.headers["x-api-key"] as string | undefined;
 
   if (!apiKey) {
