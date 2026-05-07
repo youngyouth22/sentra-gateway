@@ -45,8 +45,9 @@ export default async function (fastify: FastifyInstance) {
             type: "object",
             properties: {
               riskScore: { type: "number" },
-              authorized: { type: "boolean" },
-              reasons: { type: "array", items: { type: "string" } }
+              safe: { type: "boolean" },
+              recommendation: { type: "string" },
+              trustDecision: { type: "string" }
             }
           },
           400: { $ref: "ErrorResponse#" },

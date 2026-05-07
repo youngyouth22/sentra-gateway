@@ -34,20 +34,27 @@ export interface GeofenceResult {
  * Combine Trust Scoring with Transactional Context for Pre-Auth Check
  */
 export async function preAuthCheck(request: PreAuthCheckRequest, userId: string): Promise<PreAuthCheckResult> {
-  const trust = await evaluateTrust(request.phoneNumber, userId);
+  // Construct the full transaction context required by the new trust engine
+  const trust = await evaluateTrust({
+    phone_number: request.phoneNumber,
+    transaction_amount: request.transactionAmount || 0,
+    transaction_currency: "XAF", // Default currency for pre-auth
+    sender_phone: request.phoneNumber, // Self-check for pre-auth
+    timestamp: new Date().toISOString()
+  }, userId);
   
   const isHighAmount = (request.transactionAmount || 0) > 5000;
   let recommendation: "PROCEED" | "CHALLENGE" | "BLOCK" = "PROCEED";
 
   if (trust.decision === "BLOCK") {
     recommendation = "BLOCK";
-  } else if (trust.decision === "STEP_UP_AUTH" || isHighAmount) {
+  } else if (trust.decision === "STEP_UP" || isHighAmount) {
     recommendation = "CHALLENGE";
   }
 
   return {
     safe: recommendation !== "BLOCK",
-    riskScore: (100 - trust.trustScore) / 100,
+    riskScore: (100 - trust.risk_score) / 100,
     recommendation,
     trustDecision: trust.decision
   };

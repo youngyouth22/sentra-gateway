@@ -19,7 +19,6 @@ const reportFraudSchema = z.object({
   description: z.string().max(1000).optional(),
 });
 
-type EvaluateBody = z.infer<typeof evaluateSchema>;
 type ReportFraudBody = z.infer<typeof reportFraudSchema>;
 
 export default async function (fastify: FastifyInstance) {

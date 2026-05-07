@@ -41,10 +41,12 @@ export default async function (fastify: FastifyInstance) {
             type: "object",
             properties: {
               transactionId: { type: "string" },
-              status: { type: "string", enum: ["APPROVED", "BLOCKED", "PENDING_CHALLENGE"] },
-              trustScore: { type: "number" },
-              requiresChallenge: { type: "boolean" },
-              reason: { type: "string" }
+              approved: { type: "boolean" },
+              risk_score: { type: "number" },
+              risk_level: { type: "string" },
+              decision: { type: "string" },
+              recommended_action: { type: "string" },
+              explanation: { type: "string" }
             }
           },
           400: { $ref: "ErrorResponse#" },

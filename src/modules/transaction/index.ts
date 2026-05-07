@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { evaluateTrust, TrustResult } from "../trust/index.js";
+import { evaluateTrust } from "../trust/index.js";
+import { EvaluateResponse } from "../trust/types.js";
 import {
   triggerTransactionBlocked,
   triggerTransactionStepUp,
@@ -10,7 +11,7 @@ export interface TransactionRequest {
   amount: number;
 }
 
-export interface TransactionResponse extends TrustResult {
+export interface TransactionResponse extends EvaluateResponse {
   transactionId: string;
   approved: boolean;
 }
@@ -19,25 +20,30 @@ export async function initiateTransaction(
   request: TransactionRequest,
   userId: string, // [SECURITY] Added userId to route webhooks to the correct tenant
 ): Promise<TransactionResponse> {
-  // Pass userId to evaluateTrust so it can trigger the right tenant's webhooks
-  const trustResult = await evaluateTrust(request.phoneNumber, userId);
+  // Construct the full transaction context required by the new trust engine
+  const trustResult = await evaluateTrust({
+    phone_number: request.phoneNumber,
+    transaction_amount: request.amount,
+    transaction_currency: "XAF", // Default currency
+    sender_phone: request.phoneNumber, // Mock sender for this wrapper
+    timestamp: new Date().toISOString()
+  }, userId);
 
-  // [VH-3 FIX] Use cryptographically secure UUID instead of Math.random()
   const transactionId = `txn_${randomUUID()}`;
-  const approved = trustResult.decision === "ALLOW";
+  const approved = trustResult.decision === "APPROVE";
 
   // Trigger webhooks based on decision — routed to specific tenant
   if (trustResult.decision === "BLOCK") {
     triggerTransactionBlocked(userId, {
       transactionId,
-      riskLevel: trustResult.riskLevel,
+      riskLevel: trustResult.risk_level,
       decision: trustResult.decision,
       amount: request.amount,
     });
-  } else if (trustResult.decision === "STEP_UP_AUTH") {
+  } else if (trustResult.decision === "STEP_UP") {
     triggerTransactionStepUp(userId, {
       transactionId,
-      riskLevel: trustResult.riskLevel,
+      riskLevel: trustResult.risk_level,
       decision: trustResult.decision,
       amount: request.amount,
     });
